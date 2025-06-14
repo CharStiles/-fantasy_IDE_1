@@ -22,8 +22,20 @@ npm install
 
 3. (optional to use AI components) Create your `.env` file :
 ```
-API_KEY==your_key
+# Provider configuration
+AI_PROVIDER=openai
 
+# OpenAI configuration (default)
+OPENAI_API_KEY=your_openai_key
+OPENAI_ORG_ID=your_org_id
+
+# Ollama configuration
+OLLAMA_BASE_URL=http://localhost:11434/v1
+OLLAMA_MODEL=llama2
+
+# Or specify custom models
+AI_PROVIDER=openai
+OPENAI_MODEL=gpt-4
 ```
 
 4. Start:
