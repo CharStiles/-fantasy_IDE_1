@@ -1,6 +1,7 @@
 # Fantasy IDE 🎨✨
 
-What if writing code felt less like engineering and more playful and exploratory? Fantasy IDEs break free from utilitarian constraints, transforming development environments into imaginative spaces where viual programming blends with traditional text programming and AI becomes your creative accomplice in making programming an artistic experience. 
+These are a series of experiments with reimagining the creative coding IDE.
+This verion has bi-directional programming, with a javascript represention and a visual graphical representation. It has an AI tile that can augment the code as well as critique it. Other graphical integrations are webGL, webGPU and windowing/webcam input
 
 font in the IDE is by Clara Sambot from https://velvetyne.fr/fonts/cirruscumulus/
 
@@ -13,7 +14,7 @@ You can read more about roadmap and updates at [charstiles.github.io/loading/](h
 1. Clone this repository:
 ```bash
 git clone https://github.com/CharStiles/-fantasy_IDE_1.git
-cd fantasy_IDE_1
+cd -fantasy_IDE_1
 ```
 
 2. Install :
@@ -23,26 +24,19 @@ npm install
 
 3. (optional to use AI components) Create your `.env` file :
 ```
-OPENAI_API_KEY==your_key
+API_KEY==your_key
 
 ```
 
-4. Initialize:
-```bash
-npm run db:push
-```
-
-5. Start:
+4. Start:
 ```bash
 npm run dev:all
 ```
 
 ## Stack 
 
-- Frontend: TypeScript, Vite, TailwindCSS
+- Frontend: TypeScript
 - Backend: Express, TypeScript
-- Database: PostgreSQL with Drizzle ORM
-- UI Components: Radix UI, Shadcn
 - Code Editor: CodeMirror
 - Real-time: Socket.IO
 
