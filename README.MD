@@ -2,6 +2,8 @@
 
 What if writing code felt less like engineering and more playful and exploratory? Fantasy IDEs break free from utilitarian constraints, transforming development environments into imaginative spaces where viual programming blends with traditional text programming and AI becomes your creative accomplice in making programming an artistic experience. 
 
+font in the IDE is by Clara Sambot from https://velvetyne.fr/fonts/cirruscumulus/
+
 ## Updates 🎪
 
 You can read more about roadmap and updates at [charstiles.github.io/loading/](https://charstiles.github.io/loading/)
@@ -35,7 +37,7 @@ npm run db:push
 npm run dev:all
 ```
 
-## Tech Stack 🧙‍♂️
+## Stack 
 
 - Frontend: TypeScript, Vite, TailwindCSS
 - Backend: Express, TypeScript
@@ -44,7 +46,7 @@ npm run dev:all
 - Code Editor: CodeMirror
 - Real-time: Socket.IO
 
-## Join the Adventure! 🎨
+## Join
 
 Feel free to:
 - Submit ideas for new features
