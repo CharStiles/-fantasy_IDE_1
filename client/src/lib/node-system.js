@@ -1,6 +1,7 @@
 // Import any required dependencies at the top
 // import { CodeMirror } from 'codemirror';  // Uncomment if needed
 import { fragmentShaders } from './defaultShaders.js';
+import DiffManager from './node-system/DiffManager.js';
 
 // Global state (move inside the class as static or private fields)
 class NodeSystem {
@@ -20,6 +21,7 @@ class NodeSystem {
         this.dragOffset = { x: 0, y: 0 };
         this.draggedConnection = null;
         this.tempConnection = null;
+        this.diffManager = new DiffManager(this);
         this.setupEventListeners();
         this.initializeShaderEditor();
         this.setupConnectionEventListeners();
@@ -716,11 +718,19 @@ function processCheckboxGrid(grid) {
             return;
         }
 
+        // Store old code for diff
+        const oldCode = node.code || '';
+
         console.log("Shader updated successfully for node:", NodeSystem.#activeNodeId);
         node.code = fragmentCode;
         node.lastWorkingCode = fragmentCode;
         NodeSystem.#isDirty = true;
         this.updateShaderProgram(node);
+
+        // Save diff if code actually changed
+        if (oldCode !== fragmentCode && this.diffManager) {
+            this.diffManager.saveDiff(NodeSystem.#activeNodeId, oldCode, fragmentCode);
+        }
     }
 
     checkShaderErrors(gl, code) {
@@ -1007,6 +1017,9 @@ function processCheckboxGrid(grid) {
         if (container) {
             container.appendChild(button);
         }
+
+        // Add diff visualization button
+       // this.diffManager.createVisualizationButton();
     }
 
     updateShaderProgram(node) {

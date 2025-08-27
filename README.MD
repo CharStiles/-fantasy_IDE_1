@@ -24,8 +24,8 @@ npm install
 
 3. (optional to use AI components) Create your `.env` file :
 ```
-API_KEY==your_key
-
+API_KEY=your_key
+OPENAI_API_KEY=your_openai_api_key_here
 ```
 
 4. Start:
@@ -33,12 +33,30 @@ API_KEY==your_key
 npm run dev:all
 ```
 
+## Features 🚀
+
+### Shader Diff System
+- **Automatic Diff Saving**: Every successful shader compilation is automatically saved as a diff
+- **Diff Visualization**: Click the "📊 Diff History" button to view a tree of all shader changes
+- **AI Summaries**: Each diff includes an AI-generated summary of what changed (requires OpenAI API key)
+- **Load Previous Versions**: Click any diff to load that version of the shader back into the editor
+- **Cleanup**: Diffs are automatically minimized when shaders are minimized
+
+### How to Use the Diff System
+1. Create or edit a WebGL/WebGPU node
+2. Make changes to your shader code
+3. When the shader compiles successfully, a diff is automatically saved
+4. Click the "📊 Diff History" button in the toolbar to view all diffs
+5. Click on any diff to see details and load that version
+6. Use the Load/Delete buttons to manage your shader history
+
 ## Stack 
 
 - Frontend: TypeScript
 - Backend: Express, TypeScript
 - Code Editor: CodeMirror
 - Real-time: Socket.IO
+- AI Integration: OpenAI API (for diff summaries)
 
 ## Join
 

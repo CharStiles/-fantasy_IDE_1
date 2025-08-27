@@ -8,10 +8,22 @@ console.log("Initializing OpenAI configuration...");
 console.log("API Key present:", !!process.env.OPENAI_API_KEY);
 console.log("Organization ID present:", !!process.env.OPENAI_ORG_ID);
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  organization: process.env.OPENAI_ORG_ID,
-});
+// Only create OpenAI client if API key is available
+let openai: OpenAI | null = null;
+if (process.env.OPENAI_API_KEY) {
+  openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    organization: process.env.OPENAI_ORG_ID,
+  });
+}
+
+/**
+ * Check if OpenAI API key is available
+ * @returns {boolean} - True if API key is present, false otherwise
+ */
+export function isOpenAIAvailable(): boolean {
+  return !!process.env.OPENAI_API_KEY && openai !== null;
+}
 
 /**
  * Sends a message to OpenAI's API with exponential backoff retry logic
@@ -27,6 +39,15 @@ export async function sendMessage(
   maxRetries: number = 3,
   initialDelay: number = 1000
 ): Promise<string> {
+  // Check if API key is available
+  if (!isOpenAIAvailable()) {
+    throw new Error('OpenAI API key not configured. Please add OPENAI_API_KEY to your environment variables.');
+  }
+
+  if (!openai) {
+    throw new Error('OpenAI client not initialized. Please add OPENAI_API_KEY to your environment variables.');
+  }
+
   console.log("Sending message to OpenAI API...");
   console.log("Message length:", message.length);
   console.log("Max retries:", maxRetries);

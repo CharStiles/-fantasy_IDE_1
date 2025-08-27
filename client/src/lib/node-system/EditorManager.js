@@ -29,7 +29,7 @@ class EditorManager {
         editorContainer.style.left = '0';
         editorContainer.style.width = '100%';
         editorContainer.style.height = '100%';
-        editorContainer.style.backgroundColor = 'rgba(30, 30, 30, 0.7)';
+        editorContainer.style.backgroundColor = 'rgba(30, 30, 30, 0.2)';
         editorContainer.style.zIndex = '1000';
         editorContainer.style.display = 'none';
         editorContainer.style.padding = '20px';
@@ -357,7 +357,7 @@ class EditorManager {
                     editorContainer.style.right = '0';
                     editorContainer.style.width = '50%';
                     editorContainer.style.height = 'calc(100vh - 100px)';
-                    editorContainer.style.backgroundColor = 'rgba(30, 30, 30, 0.7)';
+                    editorContainer.style.backgroundColor = 'rgba(30, 30, 30, 0.2)';
                     editorContainer.style.zIndex = '1000';
                     editorContainer.style.padding = '20px';
                     editorContainer.style.boxSizing = 'border-box';
@@ -397,7 +397,7 @@ class EditorManager {
                 editorContainer.style.backgroundColor = '#1e1e1e';
                 editorContainer.style.padding = '20px';
                 editorContainer.style.borderRadius = '5px';
-                editorContainer.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+                editorContainer.style.boxShadow = '0 0 10px rgba(0,0,0,0.7)';
 
                 // Add toolbar with appropriate buttons
                 const toolbar = document.createElement('div');

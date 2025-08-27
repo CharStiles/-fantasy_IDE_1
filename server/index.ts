@@ -1,9 +1,10 @@
-import express, { type Request, Response, NextFunction } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { Server } from "socket.io";
 import { createServer } from "http";
-import { sendMessage } from "./services/gpt";
+import { sendMessage, isOpenAIAvailable } from "./services/gpt";
+import { diffService } from "./services/diffService";
 
 const app = express();
 app.use(express.json());
@@ -58,6 +59,12 @@ app.use((req, res, next) => {
         console.log('Socket.IO: Received AI query from client:', socket.id);
         console.log('Socket.IO: Query content:', message);
         
+        // Check if OpenAI is available before processing
+        if (!isOpenAIAvailable()) {
+          socket.emit('ai-response', "AI functionality is disabled. Please add OPENAI_API_KEY to your environment variables to enable AI features.");
+          return;
+        }
+        
         const response = await sendMessage(message);
         console.log('Socket.IO: AI response received:', response);
         
@@ -69,7 +76,13 @@ app.use((req, res, next) => {
           message: error instanceof Error ? error.message : 'Unknown error',
           stack: error instanceof Error ? error.stack : undefined
         });
-        socket.emit('ai-response', "Sorry, there was an error processing your request.");
+        
+        // Provide a more specific error message for API key issues
+        if (error instanceof Error && error.message.includes('API key not configured')) {
+          socket.emit('ai-response', "AI functionality is disabled. Please add OPENAI_API_KEY to your environment variables to enable AI features.");
+        } else {
+          socket.emit('ai-response', "Sorry, there was an error processing your request.");
+        }
       }
     });
 
@@ -102,11 +115,27 @@ app.use((req, res, next) => {
   // ALWAYS serve the app on port 3000
   // this serves both the API and the client
   const port = 3000;
-  httpServer.listen({
+  const serverInstance = httpServer.listen({
     port,
     host: "0.0.0.0",
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
   });
+
+  // Cleanup on server shutdown
+  const cleanup = () => {
+    console.log('Server shutting down, cleaning up diffs...');
+    diffService.cleanupAllDiffs();
+    process.exit(0);
+  };
+
+  // Handle graceful shutdown
+  process.on('SIGTERM', cleanup);
+  process.on('SIGINT', cleanup);
+  process.on('exit', () => {
+    console.log('Server exiting, cleaning up diffs...');
+    diffService.cleanupAllDiffs();
+  });
+
 })();

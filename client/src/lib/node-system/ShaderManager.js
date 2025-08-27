@@ -27,15 +27,41 @@ class ShaderManager {
             // Create audio input
             navigator.mediaDevices.getUserMedia({ audio: true })
                 .then(stream => {
+                    // Resume audio context if suspended
+                    if (this.audioContext.state === 'suspended') {
+                        this.audioContext.resume();
+                    }
+                    
                     const source = this.audioContext.createMediaStreamSource(stream);
                     source.connect(this.analyzer);
-                    console.log('Audio analyzer initialized');
+                    console.log('Audio analyzer initialized successfully');
+                    console.log('Audio context state:', this.audioContext.state);
+                    console.log('Analyzer frequency bin count:', this.analyzer.frequencyBinCount);
                 })
-                .catch(err => console.error('Error accessing microphone:', err));
+                .catch(err => {
+                    console.error('Error accessing microphone:', err);
+                    // Create a fallback analyzer with dummy data
+                    this.createFallbackAudio();
+                });
         } catch (err) {
             console.error('Error initializing audio context:', err);
+            // Create a fallback analyzer with dummy data
+            this.createFallbackAudio();
         }
     }
+
+    createFallbackAudio() {
+        console.log('Creating fallback audio analyzer');
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            this.analyzer = this.audioContext.createAnalyser();
+            this.analyzer.fftSize = 128;
+            console.log('Fallback audio analyzer created');
+        } catch (err) {
+            console.error('Failed to create fallback audio:', err);
+        }
+    }
+
     initializeWebGL(node) {
         this.defaultShaderCode = fragmentShaders[Math.floor(Math.random() * fragmentShaders.length)];
 
@@ -282,9 +308,23 @@ class ShaderManager {
 
         const gl = nodeData.data.gl;
         const canvas = gl.canvas;
+        
+        // Update canvas dimensions
         canvas.width = width;
         canvas.height = height;
+        
+        // Update canvas style
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        
+        // Update WebGL viewport
         gl.viewport(0, 0, width, height);
+        
+        // Update resolution uniform if it exists
+        if (nodeData.data.resolutionLocation) {
+            gl.useProgram(nodeData.data.program);
+            gl.uniform2f(nodeData.data.resolutionLocation, width, height);
+        }
 
         // Resize framebuffer textures
         const { tex1, tex2 } = nodeData.data.textures;
@@ -362,6 +402,9 @@ class ShaderManager {
         const { gl } = nodeData.data;
         console.log('Creating new shader program with code:', code);
         
+        // Store old code for diff
+        const oldCode = nodeData.code || '';
+        
         // Create new program
         const newProgram = this.createShaderProgram(gl, code);
         if (!newProgram) {
@@ -396,6 +439,11 @@ class ShaderManager {
         nodeData.code = code;
 
         console.log('Shader updated successfully');
+
+        // Save diff if code actually changed
+        if (oldCode !== code && this.nodeSystem.diffManager) {
+            this.nodeSystem.diffManager.saveDiff(nodeId, oldCode, code);
+        }
 
         // Clean up old program after setting the new one
         if (oldProgram) {

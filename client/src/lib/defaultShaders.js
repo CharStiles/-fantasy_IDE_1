@@ -553,7 +553,7 @@ void main(void)
     vec4 symbol = vec4(lissajous(p,gray*2.,mod(gray*8. , 10.)/2. , mod(gray*8., 6.) ));
     vec4 ret = mix(symbol,pcol,drop);
   ret = clamp(ret,vec4(0),vec4(1));
-    ret = mix(vec4(0,1,0,1),ret,ret);
+    //ret = mix(vec4(0,1,0,1),ret,ret);
     ret.a = 1.;
     gl_FragColor =ret;
    
