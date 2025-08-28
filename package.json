@@ -13,6 +13,7 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.60.0",
     "@codemirror/basic-setup": "^0.20.0",
     "@codemirror/commands": "^6.8.0",
     "@codemirror/lang-javascript": "^6.2.3",

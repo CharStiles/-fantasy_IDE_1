@@ -1,4 +1,5 @@
 import { storage } from "../storage";
+import { sendImageMessage, isAnthropicAvailable } from "./anthropic";
 
 export interface ShaderDiff {
     id: string;
@@ -8,13 +9,15 @@ export interface ShaderDiff {
     diff: string;
     summary: string;
     artReference: string;
+    canvasImage?: string; // Base64 encoded canvas screenshot
+    canvasImageType?: string; // MIME type of the image
     timestamp: Date;
 }
 
 class DiffService {
   private diffs: Map<string, ShaderDiff> = new Map();
 
-  async saveDiff(nodeId: string, oldCode: string, newCode: string): Promise<string> {
+  async saveDiff(nodeId: string, oldCode: string, newCode: string, canvasImage?: string, canvasImageType?: string): Promise<string> {
     const diff = this.generateDiff(oldCode, newCode);
     const id = `diff-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
@@ -27,6 +30,8 @@ class DiffService {
       diff,
       summary: '', // Initialize summary
       artReference: '', // Initialize art reference
+      canvasImage,
+      canvasImageType,
     };
 
     this.diffs.set(id, shaderDiff);
@@ -39,9 +44,13 @@ class DiffService {
       shaderDiff.summary = 'Summary generation failed';
     }
 
-    // Generate art reference using OpenAI
+    // Generate art reference using Anthropic if canvas image is available, otherwise use OpenAI
     try {
-      shaderDiff.artReference = await this.generateArtReference(newCode);
+      if (canvasImage && canvasImageType) {
+        shaderDiff.artReference = await this.generateArtReferenceFromImage(canvasImage, canvasImageType, newCode);
+      } else {
+        shaderDiff.artReference = await this.generateArtReference(newCode);
+      }
     } catch (error) {
       console.error('Failed to generate art reference:', error);
       shaderDiff.artReference = 'Art reference generation failed';
@@ -158,6 +167,30 @@ Art reference:`
     } catch (error) {
       console.error('Error generating art reference:', error);
       return 'Abstract Expressionism by Pollock';
+    }
+  }
+
+  public async generateArtReferenceFromImage(canvasImage: string, canvasImageType: string, newCode: string): Promise<string> {
+    // Check if Anthropic API key is available
+    if (!isAnthropicAvailable()) {
+      console.log('Anthropic API key not available, falling back to OpenAI');
+      return this.generateArtReference(newCode);
+    }
+
+    try {
+      const prompt = `This is a screenshot of a GLSL shader visualization. Analyze the visual output and suggest a famous work of art that it visually or conceptually reminds you of. Consider colors, patterns, movement, style, and overall aesthetic. 
+
+The shader code that generated this image is:
+${newCode}
+
+Respond with just the artwork name and artist like "Starry Night by Van Gogh" or "Composition II by Mondrian". If unsure, make up a plausible art reference that matches the visual style.`;
+
+      const response = await sendImageMessage(canvasImage, canvasImageType, prompt);
+      return response || 'Abstract Expressionism by Pollock';
+    } catch (error) {
+      console.error('Error generating art reference from image:', error);
+      // Fall back to OpenAI method
+      return this.generateArtReference(newCode);
     }
   }
 

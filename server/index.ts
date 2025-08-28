@@ -4,6 +4,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { Server } from "socket.io";
 import { createServer } from "http";
 import { sendMessage, isOpenAIAvailable } from "./services/gpt";
+import { sendTextMessage, sendImageMessage, isAnthropicAvailable } from "./services/anthropic";
 import { diffService } from "./services/diffService";
 
 const app = express();
@@ -82,6 +83,74 @@ app.use((req, res, next) => {
           socket.emit('ai-response', "AI functionality is disabled. Please add OPENAI_API_KEY to your environment variables to enable AI features.");
         } else {
           socket.emit('ai-response', "Sorry, there was an error processing your request.");
+        }
+      }
+    });
+
+    socket.on('anthropic-text', async (data) => {
+      try {
+        console.log('Socket.IO: Received Anthropic text query from client:', socket.id);
+        console.log('Socket.IO: Query content:', data);
+        
+        const { message, model } = data;
+        
+        // Check if Anthropic is available before processing
+        if (!isAnthropicAvailable()) {
+          socket.emit('anthropic-text-response', "Anthropic functionality is disabled. Please add ANTHROPIC_API_KEY to your environment variables to enable AI features.");
+          return;
+        }
+        
+        const response = await sendTextMessage(message, model);
+        console.log('Socket.IO: Anthropic text response received:', response);
+        
+        socket.emit('anthropic-text-response', response);
+        console.log('Socket.IO: Anthropic text response sent to client:', socket.id);
+      } catch (error) {
+        console.error('Socket.IO: Error processing Anthropic text query:', error);
+        console.error('Socket.IO: Error details:', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined
+        });
+        
+        // Provide a more specific error message for API key issues
+        if (error instanceof Error && error.message.includes('API key not configured')) {
+          socket.emit('anthropic-text-response', "Anthropic functionality is disabled. Please add ANTHROPIC_API_KEY to your environment variables to enable AI features.");
+        } else {
+          socket.emit('anthropic-text-response', "Sorry, there was an error processing your request.");
+        }
+      }
+    });
+
+    socket.on('anthropic-image', async (data) => {
+      try {
+        console.log('Socket.IO: Received Anthropic image query from client:', socket.id);
+        console.log('Socket.IO: Image query data:', { imageType: data.imageType, promptLength: data.prompt?.length });
+        
+        const { imageBase64, imageType, prompt, model } = data;
+        
+        // Check if Anthropic is available before processing
+        if (!isAnthropicAvailable()) {
+          socket.emit('anthropic-image-response', "Anthropic functionality is disabled. Please add ANTHROPIC_API_KEY to your environment variables to enable AI features.");
+          return;
+        }
+        
+        const response = await sendImageMessage(imageBase64, imageType, prompt, model);
+        console.log('Socket.IO: Anthropic image response received:', response);
+        
+        socket.emit('anthropic-image-response', response);
+        console.log('Socket.IO: Anthropic image response sent to client:', socket.id);
+      } catch (error) {
+        console.error('Socket.IO: Error processing Anthropic image query:', error);
+        console.error('Socket.IO: Error details:', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined
+        });
+        
+        // Provide a more specific error message for API key issues
+        if (error instanceof Error && error.message.includes('API key not configured')) {
+          socket.emit('anthropic-image-response', "Anthropic functionality is disabled. Please add ANTHROPIC_API_KEY to your environment variables to enable AI features.");
+        } else {
+          socket.emit('anthropic-image-response', "Sorry, there was an error processing your request.");
         }
       }
     });

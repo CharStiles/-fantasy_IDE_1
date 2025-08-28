@@ -270,7 +270,7 @@ class NodeSystem {
         
         // Add diff visualization button after all managers are initialized
         if (this.diffManager) {
-           // this.diffManager.createVisualizationButton();
+           this.diffManager.createVisualizationButton();
         }
     }
 

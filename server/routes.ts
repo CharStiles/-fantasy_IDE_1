@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { nodeSchema } from "@shared/schema";
 import { diffService } from "./services/diffService";
 import { isOpenAIAvailable } from "./services/gpt";
+import { sendTextMessage, sendImageMessage, isAnthropicAvailable } from "./services/anthropic";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -40,17 +41,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI availability check endpoint
   app.get("/api/ai/status", async (_req, res) => {
     try {
-      const isAvailable = isOpenAIAvailable();
+      const openaiAvailable = isOpenAIAvailable();
+      const anthropicAvailable = isAnthropicAvailable();
       res.json({ 
-        available: isAvailable,
-        message: isAvailable 
-          ? "AI functionality is available" 
-          : "AI functionality is disabled. Please add OPENAI_API_KEY to your environment variables."
+        openai: {
+          available: openaiAvailable,
+          message: openaiAvailable 
+            ? "OpenAI functionality is available" 
+            : "OpenAI functionality is disabled. Please add OPENAI_API_KEY to your environment variables."
+        },
+        anthropic: {
+          available: anthropicAvailable,
+          message: anthropicAvailable 
+            ? "Anthropic functionality is available" 
+            : "Anthropic functionality is disabled. Please add ANTHROPIC_API_KEY to your environment variables."
+        }
       });
     } catch (error) {
       res.status(500).json({ 
-        available: false,
-        error: "Failed to check AI status" 
+        openai: { available: false, error: "Failed to check OpenAI status" },
+        anthropic: { available: false, error: "Failed to check Anthropic status" }
       });
     }
   });
@@ -58,13 +68,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Diff service routes
   app.post("/api/diffs", async (req, res) => {
     try {
-      const { nodeId, oldCode, newCode } = req.body;
+      const { nodeId, oldCode, newCode, canvasImage, canvasImageType } = req.body;
       if (!nodeId || !oldCode || !newCode) {
         res.status(400).json({ error: "Missing required fields" });
         return;
       }
       
-      const diffId = await diffService.saveDiff(nodeId, oldCode, newCode);
+      const diffId = await diffService.saveDiff(nodeId, oldCode, newCode, canvasImage, canvasImageType);
       res.json({ id: diffId });
     } catch (error) {
       res.status(500).json({ error: "Failed to save diff" });
@@ -137,7 +147,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
               return res.status(404).json({ error: 'Diff not found' });
           }
 
-          const artReference = await diffService.generateArtReference(diff.newCode);
+          // Use canvas image if available, otherwise fall back to code-only analysis
+          let artReference;
+          if (diff.canvasImage && diff.canvasImageType) {
+              artReference = await diffService.generateArtReferenceFromImage(diff.canvasImage, diff.canvasImageType, diff.newCode);
+          } else {
+              artReference = await diffService.generateArtReference(diff.newCode);
+          }
+          
           diff.artReference = artReference;
           
           res.json({ success: true, artReference });
@@ -145,6 +162,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error('Error regenerating art reference:', error);
           res.status(500).json({ error: 'Failed to regenerate art reference' });
       }
+  });
+
+  // Anthropic Claude API endpoints
+  app.post("/api/anthropic/text", async (req, res) => {
+    try {
+      const { message, model } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+
+      if (!isAnthropicAvailable()) {
+        return res.status(503).json({ 
+          error: "Anthropic API key not configured. Please add ANTHROPIC_API_KEY to your environment variables." 
+        });
+      }
+
+      const response = await sendTextMessage(message, model);
+      res.json({ response });
+    } catch (error) {
+      console.error('Error sending text to Anthropic:', error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to send text to Anthropic" 
+      });
+    }
+  });
+
+  app.post("/api/anthropic/image", async (req, res) => {
+    try {
+      const { imageBase64, imageType, prompt, model } = req.body;
+      
+      if (!imageBase64 || !imageType) {
+        return res.status(400).json({ error: "Image data and type are required" });
+      }
+
+      if (!isAnthropicAvailable()) {
+        return res.status(503).json({ 
+          error: "Anthropic API key not configured. Please add ANTHROPIC_API_KEY to your environment variables." 
+        });
+      }
+
+      const response = await sendImageMessage(imageBase64, imageType, prompt, model);
+      res.json({ response });
+    } catch (error) {
+      console.error('Error sending image to Anthropic:', error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to send image to Anthropic" 
+      });
+    }
   });
 
   return httpServer;

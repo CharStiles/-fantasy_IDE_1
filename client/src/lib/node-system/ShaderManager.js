@@ -391,7 +391,7 @@ class ShaderManager {
         return program;
     }
 
-    updateShader(nodeId, code) {
+    async updateShader(nodeId, code) {
         console.log('Updating shader for node:', nodeId);
         const nodeData = this.nodeSystem.nodes.get(nodeId);
         if (!nodeData || !nodeData.data || !nodeData.data.gl) {
@@ -439,6 +439,85 @@ class ShaderManager {
         nodeData.code = code;
 
         console.log('Shader updated successfully');
+
+        // Capture the canvas immediately after successful shader update
+        console.log('Checking capture condition in shader manager:', {
+            hasDiffManager: !!this.nodeSystem.diffManager,
+            pendingCaptureNodeId: this.nodeSystem.diffManager?.pendingCaptureNodeId,
+            currentNodeId: nodeId,
+            shouldCapture: this.nodeSystem.diffManager && this.nodeSystem.diffManager.pendingCaptureNodeId === nodeId
+        });
+        
+        if (this.nodeSystem.diffManager && this.nodeSystem.diffManager.pendingCaptureNodeId === nodeId) {
+            console.log('Capturing canvas after successful shader update for node:', nodeId);
+            try {
+                // Get the canvas
+                const canvas = document.getElementById(nodeId)?.querySelector('canvas');
+                if (canvas) {
+                    // Force a render with the new shader
+                    gl.useProgram(newProgram);
+                    gl.viewport(0, 0, canvas.width, canvas.height);
+                    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                    
+                    // Set up basic uniforms if they exist
+                    if (timeLocation !== null) {
+                        gl.uniform1f(timeLocation, performance.now() / 1000);
+                    }
+                    if (resolutionLocation !== null) {
+                        gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+                    }
+                    
+                    // Draw a full-screen quad
+                    const positions = new Float32Array([
+                        -1, -1,
+                         1, -1,
+                        -1,  1,
+                         1,  1
+                    ]);
+                    
+                    const positionBuffer = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+                    
+                    if (positionLocation !== -1) {
+                        gl.enableVertexAttribArray(positionLocation);
+                        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+                    }
+                    
+                    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                    
+                    // Capture immediately after drawing
+                    const imageBitmap = await createImageBitmap(canvas);
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = canvas.width;
+                    tempCanvas.height = canvas.height;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    
+                    // Fill with white background
+                    tempCtx.fillStyle = 'white';
+                    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                    
+                    // Draw the image bitmap
+                    tempCtx.drawImage(imageBitmap, 0, 0);
+                    
+                    const dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                    const base64Data = dataURL.split(',')[1];
+                    
+                    this.nodeSystem.diffManager.capturedImageData = {
+                        image: base64Data,
+                        type: 'image/png',
+                        width: canvas.width,
+                        height: canvas.height
+                    };
+                    
+                    console.log('Canvas captured after shader update successfully');
+                    this.nodeSystem.diffManager.pendingCaptureNodeId = null; // Clear the pending capture
+                }
+            } catch (e) {
+                console.log('Canvas capture after shader update failed:', e);
+            }
+        }
 
         // Save diff if code actually changed
         if (oldCode !== code && this.nodeSystem.diffManager) {

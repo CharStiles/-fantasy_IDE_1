@@ -1,5 +1,546 @@
 import { fragmentShaders } from '../defaultShaders.js';
 
+// Utility function to capture canvas screenshot
+async function captureCanvasScreenshot(nodeId) {
+    const nodeElement = document.getElementById(nodeId);
+    if (!nodeElement) {
+        console.warn('Node element not found for screenshot:', nodeId);
+        return null;
+    }
+
+    // Try to find canvas in the node
+    const canvas = nodeElement.querySelector('canvas');
+    if (!canvas) {
+        console.warn('No canvas found in node for screenshot:', nodeId);
+        return null;
+    }
+
+    // Debug canvas information
+    console.log('Canvas debug info:', {
+        nodeId,
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        styleWidth: canvas.style.width,
+        styleHeight: canvas.style.height,
+        clientWidth: canvas.clientWidth,
+        clientHeight: canvas.clientHeight
+    });
+
+    try {
+        // Ensure canvas has content
+        if (canvas.width === 0 || canvas.height === 0) {
+            console.warn('Canvas has zero dimensions, skipping screenshot');
+            return null;
+        }
+
+        // Check context type
+        const webglContext = canvas.getContext('webgl') || canvas.getContext('webgl2');
+        console.log('Canvas context types:', {
+            hasWebGL: !!webglContext,
+            webglDrawingBufferWidth: webglContext ? webglContext.drawingBufferWidth : 'N/A',
+            webglDrawingBufferHeight: webglContext ? webglContext.drawingBufferHeight : 'N/A',
+            preserveDrawingBuffer: webglContext ? webglContext.getContextAttributes().preserveDrawingBuffer : 'N/A'
+        });
+
+        // Wait for rendering to complete
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // Simple delay to let any existing rendering complete
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        let dataURL;
+
+        if (webglContext) {
+            // For WebGL canvases, use the working method from node-system.js
+            console.log('Capturing WebGL canvas using node-system method...');
+            
+                    // Get the node data to access the proper WebGL context
+        const nodeData = window.nodeSystem?.nodes?.get(nodeId);
+        console.log('Node data lookup:', { 
+            nodeId, 
+            hasNodeSystem: !!window.nodeSystem, 
+            hasNodes: !!window.nodeSystem?.nodes,
+            nodeData: !!nodeData,
+            hasData: !!nodeData?.data,
+            hasGL: !!nodeData?.data?.gl
+        });
+        
+        // Debug the actual node data structure
+        if (nodeData && nodeData.data) {
+            console.log('Node data structure:', {
+                type: nodeData.type,
+                hasFrameBuffer: !!nodeData.data.frameBuffer,
+                hasOutputTexture: !!nodeData.data.outputTexture,
+                hasCanvas: !!nodeData.data.canvas,
+                hasGL: !!nodeData.data.gl,
+                hasProgram: !!nodeData.data.program,
+                hasRender: !!nodeData.data.render,
+                glCanvas: nodeData.data.gl?.canvas,
+                glDrawingBufferWidth: nodeData.data.gl?.drawingBufferWidth,
+                glDrawingBufferHeight: nodeData.data.gl?.drawingBufferHeight
+            });
+        }
+        
+        if (nodeData && nodeData.data && nodeData.data.gl) {
+            console.log('Found node with WebGL context, using node-specific capture...');
+                
+                const gl = nodeData.data.gl;
+                const nodeCanvas = nodeData.data.canvas || canvas; // Fallback to the original canvas
+                
+                // Check if the WebGL context's canvas matches our target canvas
+                console.log('Canvas comparison:', {
+                    targetCanvas: canvas,
+                    glCanvas: gl.canvas,
+                    canvasesMatch: canvas === gl.canvas,
+                    targetCanvasWidth: canvas.width,
+                    glCanvasWidth: gl.canvas?.width,
+                    targetCanvasHeight: canvas.height,
+                    glCanvasHeight: gl.canvas?.height
+                });
+                
+                console.log('Node canvas info:', {
+                    hasNodeCanvas: !!nodeData.data.canvas,
+                    nodeCanvasWidth: nodeData.data.canvas?.width,
+                    nodeCanvasHeight: nodeData.data.canvas?.height,
+                    fallbackCanvasWidth: canvas.width,
+                    fallbackCanvasHeight: canvas.height
+                });
+                
+                // Save current WebGL state (like in the working code)
+                const previousFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+                const previousProgram = gl.getParameter(gl.CURRENT_PROGRAM);
+                
+                // Bind to the correct framebuffer (like in the working code)
+                if (nodeData.data.frameBuffer) {
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, nodeData.data.frameBuffer);
+                    console.log('Rendering to framebuffer for capture');
+                } else {
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                    console.log('Rendering to screen for capture');
+                }
+                
+                // Force a render to ensure content is up to date
+                gl.viewport(0, 0, nodeCanvas.width, nodeCanvas.height);
+                
+                // Simple delay to let any existing rendering complete
+                await new Promise(resolve => setTimeout(resolve, 50));
+                
+                // Read pixels from the correct framebuffer
+                const pixels = new Uint8Array(nodeCanvas.width * nodeCanvas.height * 4);
+                gl.readPixels(0, 0, nodeCanvas.width, nodeCanvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+                
+                // Restore WebGL state
+                gl.bindFramebuffer(gl.FRAMEBUFFER, previousFramebuffer);
+                gl.useProgram(previousProgram);
+                
+                // Check if we have content
+                let hasContent = false;
+                for (let i = 0; i < pixels.length; i += 4) {
+                    if (pixels[i] > 0 || pixels[i + 1] > 0 || pixels[i + 2] > 0 || pixels[i + 3] > 0) {
+                        hasContent = true;
+                        break;
+                    }
+                }
+                
+                console.log('Node WebGL pixel check:', { hasContent, totalPixels: pixels.length / 4 });
+                
+                if (hasContent) {
+                    // Create a new canvas with the pixel data
+                    const tempCanvas = document.createElement('canvas');
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCanvas.width = nodeCanvas.width;
+                    tempCanvas.height = nodeCanvas.height;
+                    
+                    // Fill with white background first
+                    tempCtx.fillStyle = 'white';
+                    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                    
+                    // Create ImageData and flip vertically (WebGL origin is bottom-left)
+                    const imageData = tempCtx.createImageData(nodeCanvas.width, nodeCanvas.height);
+                    for (let y = 0; y < nodeCanvas.height; y++) {
+                        for (let x = 0; x < nodeCanvas.width; x++) {
+                            const srcIndex = (y * nodeCanvas.width + x) * 4;
+                            const dstIndex = ((nodeCanvas.height - 1 - y) * nodeCanvas.width + x) * 4;
+                            imageData.data[dstIndex] = pixels[srcIndex];     // R
+                            imageData.data[dstIndex + 1] = pixels[srcIndex + 1]; // G
+                            imageData.data[dstIndex + 2] = pixels[srcIndex + 2]; // B
+                            imageData.data[dstIndex + 3] = pixels[srcIndex + 3]; // A
+                        }
+                    }
+                    
+                    tempCtx.putImageData(imageData, 0, 0);
+                    dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                    console.log('Node WebGL capture completed successfully');
+                } else {
+                    console.log('Node WebGL pixels are all zero');
+                }
+            } else {
+                console.log('No node data found, falling back to generic WebGL capture...');
+                
+                // Fallback to generic WebGL capture
+                try {
+                    const blob = await new Promise((resolve, reject) => {
+                        canvas.toBlob(resolve, 'image/png', 0.8);
+                    });
+                    
+                    if (blob) {
+                        dataURL = await new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result);
+                            reader.readAsDataURL(blob);
+                        });
+                        console.log('Generic WebGL toBlob capture succeeded');
+                    } else {
+                        console.log('toBlob returned null blob');
+                    }
+                } catch (e) {
+                    console.log('Generic WebGL capture failed:', e);
+                }
+            }
+        }
+        
+        // If the node-specific method failed, try the generic toBlob method
+        if (!dataURL) {
+            console.log('Node-specific method failed, trying generic toBlob...');
+            try {
+                const blob = await new Promise((resolve, reject) => {
+                    canvas.toBlob(resolve, 'image/png', 0.8);
+                });
+                
+                if (blob) {
+                    dataURL = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.readAsDataURL(blob);
+                    });
+                    console.log('Generic toBlob capture succeeded as fallback');
+                } else {
+                    console.log('Generic toBlob returned null blob');
+                }
+            } catch (e) {
+                console.log('Generic toBlob capture failed:', e);
+            }
+        }
+        
+        // If toBlob also failed, try drawing to temp canvas
+        if (!dataURL) {
+            console.log('toBlob failed, trying temp canvas drawImage method...');
+            try {
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // Fill with white background
+                tempCtx.fillStyle = 'white';
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                
+                // Draw the WebGL canvas
+                tempCtx.drawImage(canvas, 0, 0);
+                
+                dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                console.log('Temp canvas drawImage method succeeded');
+            } catch (e) {
+                console.log('Temp canvas drawImage method failed:', e);
+            }
+        }
+        
+        // Try Chrome's native capture method (similar to "Save image as...")
+        if (!dataURL) {
+            console.log('Trying Chrome native capture method...');
+            try {
+                // Use the browser's native capture mechanism
+                const stream = canvas.captureStream();
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                
+                // Wait for video to load
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        resolve();
+                    };
+                });
+                
+                // Create a canvas to capture the video frame
+                const captureCanvas = document.createElement('canvas');
+                captureCanvas.width = canvas.width;
+                captureCanvas.height = canvas.height;
+                const captureCtx = captureCanvas.getContext('2d');
+                
+                // Draw the video frame
+                captureCtx.drawImage(video, 0, 0);
+                
+                dataURL = captureCanvas.toDataURL('image/png', 0.8);
+                console.log('Chrome native capture method succeeded');
+                
+                // Clean up
+                stream.getTracks().forEach(track => track.stop());
+            } catch (e) {
+                console.log('Chrome native capture method failed:', e);
+            }
+        }
+        
+        // Check if we got a dataURL but it might be blank
+        let hasValidDataURL = dataURL && dataURL.length > 100; // Basic check for non-blank image
+        
+        // Try immediate capture first (before any other operations)
+        if (!dataURL || !hasValidDataURL) {
+            console.log('Trying immediate capture after shader update...');
+            try {
+                // Wait a tiny bit for the render to complete
+                await new Promise(resolve => setTimeout(resolve, 10));
+                
+                // Try direct capture
+                const immediateDataURL = canvas.toDataURL('image/png', 0.8);
+                if (immediateDataURL && immediateDataURL.length > 100) {
+                    dataURL = immediateDataURL;
+                    console.log('Immediate capture succeeded');
+                } else {
+                    console.log('Immediate capture returned blank image');
+                }
+            } catch (e) {
+                console.log('Immediate capture failed:', e);
+            }
+        }
+        
+        // If all methods failed OR we got a blank image, try alternative pixel capture methods
+        if (!dataURL || !hasValidDataURL) {
+            console.log('All standard methods failed or returned blank image, trying alternative pixel capture...');
+            
+            // Method 1: Try createImageBitmap
+            try {
+                console.log('Trying createImageBitmap method...');
+                const imageBitmap = await createImageBitmap(canvas);
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // Fill with white background
+                tempCtx.fillStyle = 'white';
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                
+                // Draw the image bitmap
+                tempCtx.drawImage(imageBitmap, 0, 0);
+                
+                dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                console.log('createImageBitmap method succeeded');
+            } catch (e) {
+                console.log('createImageBitmap method failed:', e);
+            }
+            
+            // Method 2: Try OffscreenCanvas if available
+            if (!dataURL && typeof OffscreenCanvas !== 'undefined') {
+                try {
+                    console.log('Trying OffscreenCanvas method...');
+                    const offscreen = canvas.transferControlToOffscreen();
+                    const offscreenCanvas = new OffscreenCanvas(canvas.width, canvas.height);
+                    const offscreenCtx = offscreenCanvas.getContext('2d');
+                    
+                    // Fill with white background
+                    offscreenCtx.fillStyle = 'white';
+                    offscreenCtx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Draw the original canvas
+                    offscreenCtx.drawImage(offscreen, 0, 0);
+                    
+                    const blob = await offscreenCanvas.convertToBlob({ type: 'image/png' });
+                    const reader = new FileReader();
+                    dataURL = await new Promise((resolve) => {
+                        reader.onload = () => resolve(reader.result);
+                        reader.readAsDataURL(blob);
+                    });
+                    console.log('OffscreenCanvas method succeeded');
+                } catch (e) {
+                    console.log('OffscreenCanvas method failed:', e);
+                }
+            }
+            
+            // Method 3: Try using the existing WebGL context directly
+            if ((!dataURL || !hasValidDataURL) && webglContext) {
+                try {
+                    console.log('Trying to use existing WebGL context directly...');
+                    
+                                // Get the node data to access the existing WebGL context
+            const nodeData = window.nodeSystem?.nodes?.get(nodeId);
+            console.log('Full nodeData structure:', JSON.stringify(nodeData, null, 2));
+            console.log('nodeData.data structure:', JSON.stringify(nodeData?.data, null, 2));
+            
+            // Check if the shader program is properly set up
+            if (nodeData?.data?.gl && nodeData?.data?.program) {
+                const gl = nodeData.data.gl;
+                const program = nodeData.data.program;
+                
+                console.log('Shader program info:', {
+                    program: program,
+                    isProgram: gl.isProgram(program),
+                    linkStatus: gl.getProgramParameter(program, gl.LINK_STATUS),
+                    validateStatus: gl.getProgramParameter(program, gl.VALIDATE_STATUS),
+                    infoLog: gl.getProgramInfoLog(program)
+                });
+                
+                // Check uniform locations
+                const timeLocation = gl.getUniformLocation(program, 'u_time');
+                const resolutionLocation = gl.getUniformLocation(program, 'u_resolution');
+                const spectrumLocation = gl.getUniformLocation(program, 'u_spectrum');
+                
+                console.log('Uniform locations:', {
+                    timeLocation,
+                    resolutionLocation,
+                    spectrumLocation,
+                    hasTimeUniform: timeLocation !== null,
+                    hasResolutionUniform: resolutionLocation !== null,
+                    hasSpectrumUniform: spectrumLocation !== null
+                });
+            }
+            if (nodeData && nodeData.data && nodeData.data.gl) {
+                const gl = nodeData.data.gl;
+                        
+                        // Force a render using the existing context
+                        console.log('Forcing render with existing WebGL context...');
+                        
+                        // Try to trigger a render by calling the node's render method if it exists
+                        if (nodeData.data.render && typeof nodeData.data.render === 'function') {
+                            console.log('Calling node render method...');
+                            nodeData.data.render();
+                        }
+                        
+                        // Also try to trigger a render through the node system
+                        if (window.nodeSystem && window.nodeSystem.renderWebGLNode) {
+                            console.log('Calling nodeSystem.renderWebGLNode...');
+                            try {
+                                // Create a proper node object structure
+                                const nodeObject = {
+                                    element: { id: nodeId },
+                                    data: nodeData.data
+                                };
+                                console.log('nodeObject being passed to renderWebGLNode:', JSON.stringify(nodeObject, null, 2));
+                                await window.nodeSystem.renderWebGLNode(nodeObject);
+                            } catch (renderError) {
+                                console.log('renderWebGLNode failed, trying direct render:', renderError);
+                                // If renderWebGLNode fails, try a direct render
+                                if (gl && nodeData.data.program) {
+                                    gl.useProgram(nodeData.data.program);
+                                    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                                }
+                            }
+                        }
+                        
+                        // Now try to capture immediately after render
+                        console.log('Capturing immediately after render...');
+                        dataURL = canvas.toDataURL('image/png', 0.8);
+                        console.log('Direct capture after render succeeded');
+                    }
+                } catch (e) {
+                    console.log('Existing WebGL context method failed:', e);
+                }
+            }
+            
+            // Method 4: Try Screenshot API (screen capture)
+            if ((!dataURL || !hasValidDataURL) && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+                try {
+                    console.log('Trying Screenshot API method...');
+                    
+                    // Get the canvas element's position
+                    const rect = canvas.getBoundingClientRect();
+                    
+                    // Request screen capture
+                    const stream = await navigator.mediaDevices.getDisplayMedia({
+                        video: {
+                            mediaSource: 'screen',
+                            width: { ideal: canvas.width },
+                            height: { ideal: canvas.height }
+                        }
+                    });
+                    
+                    // Create video element to capture the stream
+                    const video = document.createElement('video');
+                    video.srcObject = stream;
+                    await new Promise(resolve => {
+                        video.onloadedmetadata = () => {
+                            video.play();
+                            resolve();
+                        };
+                    });
+                    
+                    // Create canvas to capture the video frame
+                    const captureCanvas = document.createElement('canvas');
+                    captureCanvas.width = canvas.width;
+                    captureCanvas.height = canvas.height;
+                    const captureCtx = captureCanvas.getContext('2d');
+                    
+                    // Draw the video frame
+                    captureCtx.drawImage(video, rect.left, rect.top, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+                    
+                    dataURL = captureCanvas.toDataURL('image/png', 0.8);
+                    console.log('Screenshot API method succeeded');
+                    
+                    // Clean up
+                    stream.getTracks().forEach(track => track.stop());
+                } catch (e) {
+                    console.log('Screenshot API method failed:', e);
+                }
+            }
+        } else {
+            // For non-WebGL canvases, use toDataURL
+            console.log('Capturing non-WebGL canvas...');
+            dataURL = canvas.toDataURL('image/png', 0.8);
+            console.log('toDataURL succeeded');
+        }
+
+        if (dataURL) {
+            const base64Data = dataURL.split(',')[1]; // Remove data:image/png;base64, prefix
+            console.log('Canvas screenshot captured for node:', nodeId, 'Size:', canvas.width, 'x', canvas.height, 'Base64 length:', base64Data.length);
+            
+            // Check if the base64 data represents a blank/transparent image
+            // For WebGL canvases, if the base64 length is around 3400, it's likely blank
+            if (webglContext && base64Data.length < 5000) {
+                console.log('Detected likely blank WebGL image (short base64 length), treating as blank');
+                return null; // Return null to trigger alternative methods
+            }
+            
+            // Try to decode a small portion to see if it's all zeros
+            try {
+                const binaryString = atob(base64Data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                // Check if the image data portion is all zeros (transparent/blank)
+                let allZeros = true;
+                for (let i = 0; i < Math.min(bytes.length, 1000); i++) {
+                    if (bytes[i] !== 0) {
+                        allZeros = false;
+                        break;
+                    }
+                }
+                
+                if (allZeros) {
+                    console.log('Detected blank/transparent image, all zeros in data');
+                    return null; // Return null to trigger alternative methods
+                }
+            } catch (e) {
+                console.log('Could not analyze base64 data:', e);
+            }
+            
+            return {
+                image: base64Data,
+                type: 'image/png',
+                width: canvas.width,
+                height: canvas.height
+            };
+        } else {
+            console.warn('Failed to capture canvas screenshot for node:', nodeId, '- dataURL is null/undefined');
+            return null;
+        }
+    } catch (error) {
+        console.warn('Failed to capture canvas screenshot:', error);
+        return null;
+    }
+}
+
 class DiffManager {
     constructor(nodeSystem) {
         this.nodeSystem = nodeSystem;
@@ -13,17 +554,232 @@ class DiffManager {
         this.infoPopup = null;
         this.loadedDiffId = null; // Track which diff is currently loaded
         this.detailPanel = null;
+        this.pendingCaptureNodeId = null; // Track which node needs capture during render
+        this.capturedImageData = null; // Store captured image data
         this.setupCleanup();
     }
 
     async saveDiff(nodeId, oldCode, newCode) {
         try {
+            // Set up capture during render
+            this.pendingCaptureNodeId = nodeId;
+            this.capturedImageData = null;
+            
+            // Capture canvas screenshot if available
+            let screenshot = await captureCanvasScreenshot(nodeId);
+            let canvasImage = screenshot ? screenshot.image : null;
+            let canvasImageType = screenshot ? screenshot.type : null;
+            
+            // If the first capture failed OR produced blank content, try capturing after a shader update
+            if ((!screenshot || (screenshot && screenshot.image && screenshot.image.length < 1000)) && window.nodeSystem?.shaderManager) {
+                console.log('First capture failed, trying capture after shader update...');
+                
+                // Update the shader first
+                const nodeData = window.nodeSystem.nodes.get(nodeId);
+                if (nodeData && nodeData.type === 'webgl') {
+                    window.nodeSystem.shaderManager.updateShader(nodeId, newCode);
+                    
+                    // Wait a bit for shader to compile
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    // Now explicitly call renderWebGLNode to trigger capture
+                    console.log('Explicitly calling renderWebGLNode for capture...');
+                    try {
+                        const nodeObject = {
+                            element: { id: nodeId },
+                            data: nodeData.data
+                        };
+                        await window.nodeSystem.renderWebGLNode(nodeObject);
+                    } catch (renderError) {
+                        console.log('renderWebGLNode failed:', renderError);
+                    }
+                    
+                    // Wait a bit more for capture to complete
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                                // Check if we captured during render
+            console.log('Checking for captured image data:', {
+                hasCapturedData: !!this.capturedImageData,
+                capturedData: this.capturedImageData
+            });
+            
+                                if (this.capturedImageData) {
+                        console.log('Using captured image data from render');
+                        screenshot = this.capturedImageData;
+                        canvasImage = this.capturedImageData.image;
+                        canvasImageType = this.capturedImageData.type;
+                        this.capturedImageData = null; // Clear the captured data
+                        
+                        // Skip all subsequent capture attempts since we have a successful capture
+                        console.log('Skipping subsequent capture attempts - we have a successful capture');
+                        
+                        // Save the diff with the captured image data
+                        const response = await fetch('/api/diffs', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ 
+                                nodeId, 
+                                oldCode, 
+                                newCode, 
+                                canvasImage, 
+                                canvasImageType 
+                            })
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('Failed to save diff');
+                        }
+
+                        const result = await response.json();
+                        console.log('Diff saved with captured image:', result.id);
+                        
+                        // Update the loaded diff ID to the new one
+                        this.loadedDiffId = result.id;
+                        
+                        return result.id;
+                    } else {
+                        console.log('No captured image data from render, trying fallback...');
+                        // Try fallback capture methods
+                        try {
+                            const canvas = document.getElementById(nodeId)?.querySelector('canvas');
+                            if (canvas) {
+                                const imageBitmap = await createImageBitmap(canvas);
+                                const tempCanvas = document.createElement('canvas');
+                                tempCanvas.width = canvas.width;
+                                tempCanvas.height = canvas.height;
+                                const tempCtx = tempCanvas.getContext('2d');
+                                
+                                tempCtx.fillStyle = 'white';
+                                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                                tempCtx.drawImage(imageBitmap, 0, 0);
+                                
+                                const dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                                const base64Data = dataURL.split(',')[1];
+                                
+                                screenshot = {
+                                    image: base64Data,
+                                    type: 'image/png',
+                                    width: canvas.width,
+                                    height: canvas.height
+                                };
+                                canvasImage = base64Data;
+                                canvasImageType = 'image/png';
+                                console.log('Fallback capture succeeded');
+                            }
+                        } catch (e) {
+                            console.log('Fallback capture failed:', e);
+                        }
+                    }
+                }
+            }
+            
+            // For WebGL canvases, always try the alternative methods since the standard methods often fail
+            const canvas = document.getElementById(nodeId)?.querySelector('canvas');
+            const webglContext = canvas ? (canvas.getContext('webgl') || canvas.getContext('webgl2')) : null;
+            if (webglContext) {
+                console.log('Trying alternative pixel capture methods...');
+                const canvas = document.getElementById(nodeId)?.querySelector('canvas');
+                if (canvas) {
+                    // Try createImageBitmap with delay to ensure shader has rendered
+                    try {
+                        console.log('Trying createImageBitmap method with delay...');
+                        
+                        // Wait for the shader to definitely render
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        
+                        // Force a few render frames
+                        for (let i = 0; i < 3; i++) {
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                        }
+                        
+                        const imageBitmap = await createImageBitmap(canvas);
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = canvas.width;
+                        tempCanvas.height = canvas.height;
+                        const tempCtx = tempCanvas.getContext('2d');
+                        
+                        // Fill with white background
+                        tempCtx.fillStyle = 'white';
+                        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                        
+                        // Draw the image bitmap
+                        tempCtx.drawImage(imageBitmap, 0, 0);
+                        
+                        const dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                        const base64Data = dataURL.split(',')[1];
+                        
+                        screenshot = {
+                            image: base64Data,
+                            type: 'image/png',
+                            width: canvas.width,
+                            height: canvas.height
+                        };
+                        canvasImage = base64Data;
+                        canvasImageType = 'image/png';
+                        console.log('createImageBitmap method with delay succeeded');
+                    } catch (e) {
+                        console.log('createImageBitmap method with delay failed:', e);
+                    }
+                    
+                    // Try clipboard API method
+                    if (!screenshot) {
+                        try {
+                            console.log('Trying clipboard API method...');
+                            
+                            // Copy the canvas to clipboard
+                            await navigator.clipboard.write([
+                                new ClipboardItem({
+                                    'image/png': canvas.toBlob()
+                                })
+                            ]);
+                            
+                            // Read from clipboard
+                            const clipboardItems = await navigator.clipboard.read();
+                            for (const clipboardItem of clipboardItems) {
+                                for (const type of clipboardItem.types) {
+                                    if (type === 'image/png') {
+                                        const blob = await clipboardItem.getType(type);
+                                        const dataURL = await new Promise((resolve) => {
+                                            const reader = new FileReader();
+                                            reader.onload = () => resolve(reader.result);
+                                            reader.readAsDataURL(blob);
+                                        });
+                                        
+                                        const base64Data = dataURL.split(',')[1];
+                                        screenshot = {
+                                            image: base64Data,
+                                            type: 'image/png',
+                                            width: canvas.width,
+                                            height: canvas.height
+                                        };
+                                        canvasImage = base64Data;
+                                        canvasImageType = 'image/png';
+                                        console.log('Clipboard API method succeeded');
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.log('Clipboard API method failed:', e);
+                        }
+                    }
+                }
+            }
+
             const response = await fetch('/api/diffs', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ nodeId, oldCode, newCode })
+                body: JSON.stringify({ 
+                    nodeId, 
+                    oldCode, 
+                    newCode, 
+                    canvasImage, 
+                    canvasImageType 
+                })
             });
 
             if (!response.ok) {
@@ -592,6 +1348,60 @@ class DiffManager {
         summarySection.appendChild(summaryText);
         this.detailPanel.appendChild(summarySection);
 
+        // Canvas Screenshot Section (if available)
+        if (node.diff.canvasImage) {
+            const screenshotSection = document.createElement('div');
+            screenshotSection.style.cssText = `margin: 10px 0; padding: 10px; background-color: rgba(30, 30, 30, 0.2); border-radius: 8px;`;
+            const screenshotTitle = document.createElement('h4');
+            screenshotTitle.textContent = 'Canvas Screenshot';
+            screenshotTitle.style.cssText = `margin: 0 0 10px 0; color: #ff69b4; font-family: 'Bianzhidai', monospace; font-size: 14px;`;
+            
+            // Debug info
+            const debugInfo = document.createElement('div');
+            debugInfo.style.cssText = `margin: 0 0 10px 0; color: #ff69b4; font-family: 'Bianzhidai', monospace; font-size: 10px;`;
+            debugInfo.textContent = `Base64 length: ${node.diff.canvasImage.length}, Type: ${node.diff.canvasImageType || 'image/png'}`;
+            
+            const screenshotImg = document.createElement('img');
+            screenshotImg.src = `data:${node.diff.canvasImageType || 'image/png'};base64,${node.diff.canvasImage}`;
+            screenshotImg.style.cssText = `
+                width: 100%;
+                max-width: 300px;
+                height: auto;
+                border-radius: 4px;
+                border: 1px solid #ff69b4;
+                margin: 0;
+            `;
+            screenshotImg.alt = 'Canvas screenshot at time of diff';
+            
+            // Add error handling for image load
+            screenshotImg.onerror = () => {
+                console.error('Failed to load canvas screenshot image');
+                screenshotImg.style.display = 'none';
+                const errorMsg = document.createElement('div');
+                errorMsg.style.cssText = `color: #ff4444; font-family: 'Bianzhidai', monospace; font-size: 12px;`;
+                errorMsg.textContent = 'Failed to load image (base64 data may be invalid)';
+                screenshotSection.appendChild(errorMsg);
+            };
+            
+            screenshotSection.appendChild(screenshotTitle);
+            screenshotSection.appendChild(debugInfo);
+            screenshotSection.appendChild(screenshotImg);
+            this.detailPanel.appendChild(screenshotSection);
+        } else {
+            // Show when no canvas image is available
+            const noImageSection = document.createElement('div');
+            noImageSection.style.cssText = `margin: 10px 0; padding: 10px; background-color: rgba(30, 30, 30, 0.2); border-radius: 8px;`;
+            const noImageTitle = document.createElement('h4');
+            noImageTitle.textContent = 'Canvas Screenshot';
+            noImageTitle.style.cssText = `margin: 0 0 5px 0; color: #ff69b4; font-family: 'Bianzhidai', monospace; font-size: 14px;`;
+            const noImageText = document.createElement('p');
+            noImageText.textContent = 'No canvas screenshot available for this diff';
+            noImageText.style.cssText = `margin: 0; color: #888; font-family: 'Bianzhidai', monospace; font-size: 12px; font-style: italic;`;
+            noImageSection.appendChild(noImageTitle);
+            noImageSection.appendChild(noImageText);
+            this.detailPanel.appendChild(noImageSection);
+        }
+
         // Art Reference Section
         const artReferenceSection = document.createElement('div');
         artReferenceSection.style.cssText = `margin: 10px 0; padding: 10px; background-color: rgba(30, 30, 30, 0.2); border-radius: 8px;`;
@@ -613,6 +1423,11 @@ class DiffManager {
             regenerateButton.style.cssText = `margin-top: 8px; padding: 4px 8px; background-color: rgba(255, 105, 180, 0.8); color: #1e1e1e; border: 1px solid #ff69b4; border-radius: 4px; cursor: pointer; font-family: 'Bianzhidai', monospace; font-size: 10px;`;
             regenerateButton.addEventListener('click', async () => {
                 try {
+                    // Show loading state
+                    regenerateButton.textContent = 'Generating...';
+                    regenerateButton.disabled = true;
+                    regenerateButton.style.backgroundColor = 'rgba(68, 68, 68, 0.8)';
+                    
                     const response = await fetch(`/api/diffs/${node.diff.id}/regenerate-art`, {
                         method: 'POST'
                     });
@@ -621,9 +1436,18 @@ class DiffManager {
                         node.diff.artReference = data.artReference;
                         artReferenceText.textContent = data.artReference;
                         regenerateButton.remove();
+                    } else {
+                        // Reset button on error
+                        regenerateButton.textContent = 'Generate Art Reference';
+                        regenerateButton.disabled = false;
+                        regenerateButton.style.backgroundColor = 'rgba(255, 105, 180, 0.8)';
                     }
                 } catch (error) {
                     console.error('Error regenerating art reference:', error);
+                    // Reset button on error
+                    regenerateButton.textContent = 'Generate Art Reference';
+                    regenerateButton.disabled = false;
+                    regenerateButton.style.backgroundColor = 'rgba(255, 105, 180, 0.8)';
                 }
             });
             artReferenceSection.appendChild(regenerateButton);

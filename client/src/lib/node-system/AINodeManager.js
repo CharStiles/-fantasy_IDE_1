@@ -13,17 +13,25 @@ class AINodeManager {
         try {
             const response = await fetch('/api/ai/status');
             const data = await response.json();
-            this.isAIAvailable = data.available;
-            this.isEnabled = data.available;
+            
+            // Check if either OpenAI or Anthropic is available
+            const openaiAvailable = data.openai && data.openai.available;
+            const anthropicAvailable = data.anthropic && data.anthropic.available;
+            this.isAIAvailable = openaiAvailable || anthropicAvailable;
+            this.isEnabled = this.isAIAvailable;
             
             console.log('AINodeManager: AI availability check result:', data);
+            console.log('AINodeManager: OpenAI available:', openaiAvailable);
+            console.log('AINodeManager: Anthropic available:', anthropicAvailable);
+            console.log('AINodeManager: Overall AI available:', this.isAIAvailable);
             
             if (this.isAIAvailable) {
                 this.initializeSocket();
                 this.setupConnectionEvents();
             } else {
                 console.log('AINodeManager: AI is not available, disabling AI functionality');
-                this.updateConnectionStatus(false, data.message || 'AI functionality is disabled');
+                const message = data.openai?.message || data.anthropic?.message || 'AI functionality is disabled';
+                this.updateConnectionStatus(false, message);
             }
             
             // Update the toolbar to reflect AI availability
