@@ -169,7 +169,7 @@ async function captureCanvasScreenshot(nodeId) {
                     }
                     
                     tempCtx.putImageData(imageData, 0, 0);
-                    dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                    dataURL = tempCanvas.toDataURL('image/jpeg', 0.6);
                     console.log('Node WebGL capture completed successfully');
                 } else {
                     console.log('Node WebGL pixels are all zero');
@@ -238,7 +238,7 @@ async function captureCanvasScreenshot(nodeId) {
                 // Draw the WebGL canvas
                 tempCtx.drawImage(canvas, 0, 0);
                 
-                dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                dataURL = tempCanvas.toDataURL('image/jpeg', 0.6);
                 console.log('Temp canvas drawImage method succeeded');
             } catch (e) {
                 console.log('Temp canvas drawImage method failed:', e);
@@ -271,7 +271,7 @@ async function captureCanvasScreenshot(nodeId) {
                 // Draw the video frame
                 captureCtx.drawImage(video, 0, 0);
                 
-                dataURL = captureCanvas.toDataURL('image/png', 0.8);
+                dataURL = captureCanvas.toDataURL('image/jpeg', 0.6);
                 console.log('Chrome native capture method succeeded');
                 
                 // Clean up
@@ -292,7 +292,7 @@ async function captureCanvasScreenshot(nodeId) {
                 await new Promise(resolve => setTimeout(resolve, 10));
                 
                 // Try direct capture
-                const immediateDataURL = canvas.toDataURL('image/png', 0.8);
+                const immediateDataURL = canvas.toDataURL('image/jpeg', 0.6);
                 if (immediateDataURL && immediateDataURL.length > 100) {
                     dataURL = immediateDataURL;
                     console.log('Immediate capture succeeded');
@@ -324,7 +324,7 @@ async function captureCanvasScreenshot(nodeId) {
                 // Draw the image bitmap
                 tempCtx.drawImage(imageBitmap, 0, 0);
                 
-                dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                dataURL = tempCanvas.toDataURL('image/jpeg', 0.6);
                 console.log('createImageBitmap method succeeded');
             } catch (e) {
                 console.log('createImageBitmap method failed:', e);
@@ -429,7 +429,7 @@ async function captureCanvasScreenshot(nodeId) {
                         
                         // Now try to capture immediately after render
                         console.log('Capturing immediately after render...');
-                        dataURL = canvas.toDataURL('image/png', 0.8);
+                        dataURL = canvas.toDataURL('image/jpeg', 0.6);
                         console.log('Direct capture after render succeeded');
                     }
                 } catch (e) {
@@ -473,7 +473,7 @@ async function captureCanvasScreenshot(nodeId) {
                     // Draw the video frame
                     captureCtx.drawImage(video, rect.left, rect.top, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
                     
-                    dataURL = captureCanvas.toDataURL('image/png', 0.8);
+                    dataURL = captureCanvas.toDataURL('image/jpeg', 0.6);
                     console.log('Screenshot API method succeeded');
                     
                     // Clean up
@@ -485,7 +485,7 @@ async function captureCanvasScreenshot(nodeId) {
         } else {
             // For non-WebGL canvases, use toDataURL
             console.log('Capturing non-WebGL canvas...');
-            dataURL = canvas.toDataURL('image/png', 0.8);
+            dataURL = canvas.toDataURL('image/jpeg', 0.6);
             console.log('toDataURL succeeded');
         }
 
@@ -547,6 +547,8 @@ class DiffManager {
         this.diffs = new Map();
         this.visualizationContainer = null;
         this.isVisualizationOpen = false;
+        this.artMapContainer = null;
+        this.isArtMapOpen = false;
         this.svg = null;
         this.nodes = [];
         this.connections = [];
@@ -556,11 +558,56 @@ class DiffManager {
         this.detailPanel = null;
         this.pendingCaptureNodeId = null; // Track which node needs capture during render
         this.capturedImageData = null; // Store captured image data
+        this.currentLayout = 'chronological'; // 'chronological', 'artistic_movement', 'artist_centric', 'style_network'
+        this.lastDiffTime = 0; // Track last diff creation time
+        this.diffCooldownMs = 60000; // 1 minute cooldown between diffs
         this.setupCleanup();
+        
+        // Add debugging methods to window for easy testing
+        if (typeof window !== 'undefined') {
+            window.diffManager = this;
+            window.resetDiffCooldown = () => this.resetCooldown();
+            window.getDiffCooldownTime = () => this.getRemainingCooldownTime();
+        }
+    }
+
+    // Get remaining cooldown time in seconds
+    getRemainingCooldownTime() {
+        const now = Date.now();
+        const timeSinceLastDiff = now - this.lastDiffTime;
+        const remainingTime = Math.max(0, this.diffCooldownMs - timeSinceLastDiff);
+        return Math.ceil(remainingTime / 1000);
+    }
+
+    // Check if diff creation is currently rate limited
+    isRateLimited() {
+        return this.getRemainingCooldownTime() > 0;
+    }
+
+    // Reset the cooldown (useful for testing or manual override)
+    resetCooldown() {
+        this.lastDiffTime = 0;
+        console.log('Diff cooldown reset - you can now create diffs immediately');
     }
 
     async saveDiff(nodeId, oldCode, newCode) {
         try {
+            // Rate limiting: Check if enough time has passed since last diff
+            // This prevents excessive API calls to OpenAI, Anthropic, and ArtSearch
+            const now = Date.now();
+            const timeSinceLastDiff = now - this.lastDiffTime;
+            
+            if (timeSinceLastDiff < this.diffCooldownMs) {
+                const remainingTime = Math.ceil((this.diffCooldownMs - timeSinceLastDiff) / 1000);
+                console.log(`🚫 Diff creation rate limited. Please wait ${remainingTime} seconds before creating another diff.`);
+                console.log(`💡 Tip: Use window.resetDiffCooldown() in console to reset cooldown for testing`);
+                return; // Skip creating this diff
+            }
+            
+            // Update last diff time
+            this.lastDiffTime = now;
+            console.log(`✅ Creating diff for node ${nodeId} (cooldown: ${this.diffCooldownMs/1000}s)`);
+            
             // Set up capture during render
             this.pendingCaptureNodeId = nodeId;
             this.capturedImageData = null;
@@ -614,18 +661,29 @@ class DiffManager {
                         console.log('Skipping subsequent capture attempts - we have a successful capture');
                         
                         // Save the diff with the captured image data
+                        const payload = { 
+                            nodeId, 
+                            oldCode, 
+                            newCode, 
+                            canvasImage, 
+                            canvasImageType 
+                        };
+                        
+                        console.log(`📤 Sending diff payload:`, {
+                            nodeId,
+                            oldCodeLength: oldCode.length,
+                            newCodeLength: newCode.length,
+                            canvasImageLength: canvasImage ? canvasImage.length : 0,
+                            canvasImageType,
+                            totalPayloadSize: JSON.stringify(payload).length
+                        });
+                        
                         const response = await fetch('/api/diffs', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                             },
-                            body: JSON.stringify({ 
-                                nodeId, 
-                                oldCode, 
-                                newCode, 
-                                canvasImage, 
-                                canvasImageType 
-                            })
+                            body: JSON.stringify(payload)
                         });
 
                         if (!response.ok) {
@@ -655,17 +713,17 @@ class DiffManager {
                                 tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
                                 tempCtx.drawImage(imageBitmap, 0, 0);
                                 
-                                const dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                                const dataURL = tempCanvas.toDataURL('image/jpeg', 0.6);
                                 const base64Data = dataURL.split(',')[1];
                                 
                                 screenshot = {
                                     image: base64Data,
-                                    type: 'image/png',
+                                    type: 'image/jpeg',
                                     width: canvas.width,
                                     height: canvas.height
                                 };
                                 canvasImage = base64Data;
-                                canvasImageType = 'image/png';
+                                canvasImageType = 'image/jpeg';
                                 console.log('Fallback capture succeeded');
                             }
                         } catch (e) {
@@ -707,17 +765,17 @@ class DiffManager {
                         // Draw the image bitmap
                         tempCtx.drawImage(imageBitmap, 0, 0);
                         
-                        const dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                        const dataURL = tempCanvas.toDataURL('image/jpeg', 0.6);
                         const base64Data = dataURL.split(',')[1];
                         
                         screenshot = {
                             image: base64Data,
-                            type: 'image/png',
+                            type: 'image/jpeg',
                             width: canvas.width,
                             height: canvas.height
                         };
                         canvasImage = base64Data;
-                        canvasImageType = 'image/png';
+                        canvasImageType = 'image/jpeg';
                         console.log('createImageBitmap method with delay succeeded');
                     } catch (e) {
                         console.log('createImageBitmap method with delay failed:', e);
@@ -755,7 +813,7 @@ class DiffManager {
                                             height: canvas.height
                                         };
                                         canvasImage = base64Data;
-                                        canvasImageType = 'image/png';
+                                        canvasImageType = 'image/jpeg';
                                         console.log('Clipboard API method succeeded');
                                         break;
                                     }
@@ -768,18 +826,29 @@ class DiffManager {
                 }
             }
 
+            const payload = { 
+                nodeId, 
+                oldCode, 
+                newCode, 
+                canvasImage, 
+                canvasImageType 
+            };
+            
+            console.log(`📤 Sending diff payload (fallback):`, {
+                nodeId,
+                oldCodeLength: oldCode.length,
+                newCodeLength: newCode.length,
+                canvasImageLength: canvasImage ? canvasImage.length : 0,
+                canvasImageType,
+                totalPayloadSize: JSON.stringify(payload).length
+            });
+            
             const response = await fetch('/api/diffs', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ 
-                    nodeId, 
-                    oldCode, 
-                    newCode, 
-                    canvasImage, 
-                    canvasImageType 
-                })
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {
@@ -869,16 +938,62 @@ class DiffManager {
             font-size: 14px;
             margin-left: 10px;
             transition: all 0.3s ease;
+            position: relative;
         `;
 
+        // Add cooldown indicator
+        const cooldownIndicator = document.createElement('div');
+        cooldownIndicator.className = 'cooldown-indicator';
+        cooldownIndicator.style.cssText = `
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background-color: #ff4444;
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        `;
+        button.appendChild(cooldownIndicator);
+
+        // Update cooldown indicator periodically
+        const updateCooldownIndicator = () => {
+            const remainingTime = this.getRemainingCooldownTime();
+            if (remainingTime > 0) {
+                cooldownIndicator.textContent = remainingTime;
+                cooldownIndicator.style.opacity = '1';
+                button.style.backgroundColor = 'rgba(255, 68, 68, 0.2)';
+                button.style.borderColor = '#ff4444';
+            } else {
+                cooldownIndicator.style.opacity = '0';
+                button.style.backgroundColor = 'rgba(68, 68, 68, 0.2)';
+                button.style.borderColor = '#ff69b4';
+            }
+        };
+
+        // Update every second
+        const cooldownInterval = setInterval(updateCooldownIndicator, 1000);
+        updateCooldownIndicator(); // Initial update
+
         button.addEventListener('mouseenter', () => {
-            button.style.backgroundColor = 'rgba(255, 105, 180, 0.2)';
-            button.style.color = '#1e1e1e';
+            if (!this.isRateLimited()) {
+                button.style.backgroundColor = 'rgba(255, 105, 180, 0.2)';
+                button.style.color = '#1e1e1e';
+            }
         });
 
         button.addEventListener('mouseleave', () => {
-            button.style.backgroundColor = 'rgba(68, 68, 68, 0.2)';
-            button.style.color = 'white';
+            if (!this.isRateLimited()) {
+                button.style.backgroundColor = 'rgba(68, 68, 68, 0.2)';
+                button.style.color = 'white';
+            }
         });
 
         button.addEventListener('click', () => {
@@ -886,10 +1001,17 @@ class DiffManager {
             this.toggleVisualization();
         });
 
+        // Store interval reference for cleanup
+        this.cooldownInterval = cooldownInterval;
+
         const toolbar = document.getElementById('toolbar');
         if (toolbar) {
             toolbar.appendChild(button);
         }
+    }
+
+    createArtReferenceMapButton() {
+        // This method is no longer needed - layout selector will be inside diff history
     }
 
     toggleVisualization() {
@@ -948,7 +1070,32 @@ class DiffManager {
         headerButtons.style.cssText = `
             display: flex;
             gap: 10px;
+            align-items: center;
         `;
+
+        // Layout selector
+        const layoutSelect = document.createElement('select');
+        layoutSelect.style.cssText = `
+            padding: 5px 12px;
+            background-color: rgba(68, 68, 68, 0.2);
+            color: white;
+            border: 1px solid #ff69b4;
+            border-radius: 4px;
+            font-family: 'Bianzhidai', monospace;
+            font-size: 12px;
+            cursor: pointer;
+        `;
+        layoutSelect.innerHTML = `
+            <option value="chronological">📅 Chronological</option>
+            <option value="artistic_movement">🎭 Artistic Movement</option>
+            <option value="artist_centric">👨‍🎨 Artist Centric</option>
+            <option value="style_network">🕸️ Style Network</option>
+        `;
+        layoutSelect.value = this.currentLayout;
+        layoutSelect.addEventListener('change', (e) => {
+            this.currentLayout = e.target.value;
+            this.renderDivs(); // Re-render with new layout
+        });
 
         const clearAllButton = document.createElement('button');
         clearAllButton.textContent = '🗑️ Clear All';
@@ -1001,6 +1148,7 @@ class DiffManager {
             this.closeVisualization();
         });
 
+        headerButtons.appendChild(layoutSelect);
         headerButtons.appendChild(clearAllButton);
         headerButtons.appendChild(closeButton);
         header.appendChild(title);
@@ -1073,13 +1221,28 @@ class DiffManager {
         }
     }
 
+    // Art reference map methods removed - now integrated into main diff history
+
     renderDivs() {
         if (!this.svg) return;
-        console.log('Rendering divs, clearing container...');
+        console.log('Rendering divs with layout:', this.currentLayout);
         this.svg.innerHTML = ''; // Clear left panel
-        this.buildNodeHierarchy();
-        this.drawDivConnections();
-        this.drawDivNodes();
+        
+        // Check if we have diffs with art references
+        const diffsWithArt = Array.from(this.diffs.values()).filter(diff => diff.artReference);
+        
+        if (diffsWithArt.length > 0 && this.currentLayout !== 'chronological') {
+            // Use art reference layouts
+            this.buildArtReferenceNodeHierarchy();
+            this.drawArtReferenceConnections();
+            this.drawDivNodes(); // This method now handles both regular and art reference nodes
+            this.updateArtMapLegend();
+        } else {
+            // Use regular chronological layout
+            this.buildNodeHierarchy();
+            this.drawDivConnections();
+            this.drawDivNodes();
+        }
     }
 
     buildNodeHierarchy() {
@@ -1147,6 +1310,361 @@ class DiffManager {
         });
     }
 
+    buildArtReferenceNodeHierarchy() {
+        this.nodes = [];
+        this.connections = [];
+        console.log('Building art reference node hierarchy with layout:', this.currentLayout);
+
+        // Get all diffs with art references
+        const diffsWithArt = Array.from(this.diffs.values()).filter(diff => diff.artReference);
+        console.log('Diffs with art references:', diffsWithArt.length);
+
+        if (diffsWithArt.length === 0) {
+            console.log('No diffs with art references found');
+            return;
+        }
+
+        switch (this.currentLayout) {
+            case 'chronological':
+                this.buildChronologicalLayout(diffsWithArt);
+                break;
+            case 'artistic_movement':
+                this.buildArtisticMovementLayout(diffsWithArt);
+                break;
+            case 'artist_centric':
+                this.buildArtistCentricLayout(diffsWithArt);
+                break;
+            case 'style_network':
+                this.buildStyleNetworkLayout(diffsWithArt);
+                break;
+            default:
+                this.buildChronologicalLayout(diffsWithArt);
+        }
+    }
+
+    buildChronologicalLayout(diffs) {
+        // Sort by timestamp
+        diffs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        let xOffset = 50;
+        const ySpacing = 120;
+        let maxY = 0;
+
+        diffs.forEach((diff, index) => {
+            const node = {
+                id: diff.id,
+                nodeId: diff.nodeId,
+                x: xOffset,
+                y: 50 + (index * ySpacing),
+                width: 200,
+                height: 80,
+                diff: diff,
+                parent: null,
+                children: [],
+                isSelected: false,
+                isHovered: false,
+                isLoaded: diff.id === this.loadedDiffId,
+                artReference: diff.artReference,
+                artist: this.extractArtist(diff.artReference),
+                movement: this.classifyArtisticMovement(diff.artReference)
+            };
+
+            this.nodes.push(node);
+            maxY = Math.max(maxY, node.y + node.height);
+            xOffset += 250;
+        });
+    }
+
+    buildArtisticMovementLayout(diffs) {
+        // Group by artistic movement
+        const movementGroups = new Map();
+        
+        diffs.forEach(diff => {
+            const movement = this.classifyArtisticMovement(diff.artReference);
+            if (!movementGroups.has(movement)) {
+                movementGroups.set(movement, []);
+            }
+            movementGroups.get(movement).push(diff);
+        });
+
+        const movements = Array.from(movementGroups.keys());
+        const movementColors = {
+            'impressionism': '#FF6B6B',
+            'expressionism': '#4ECDC4',
+            'cubism': '#45B7D1',
+            'abstract': '#96CEB4',
+            'surrealism': '#FFEAA7',
+            'minimalism': '#DDA0DD',
+            'renaissance': '#F8B195',
+            'baroque': '#355C7D',
+            'modern': '#6C5B7B',
+            'contemporary': '#C06C84'
+        };
+
+        let yOffset = 50;
+        const xSpacing = 250;
+        let maxX = 0;
+
+        movements.forEach((movement, movementIndex) => {
+            const movementDiffs = movementGroups.get(movement);
+            let xOffset = 50;
+
+            // Create movement header
+            const headerNode = {
+                id: `header-${movement}`,
+                nodeId: movement,
+                x: xOffset,
+                y: yOffset,
+                width: 200,
+                height: 40,
+                diff: null,
+                parent: null,
+                children: [],
+                isSelected: false,
+                isHovered: false,
+                isLoaded: false,
+                isHeader: true,
+                movement: movement,
+                color: movementColors[movement] || '#FF69B4'
+            };
+
+            this.nodes.push(headerNode);
+            yOffset += 80;
+
+            // Add diffs for this movement
+            movementDiffs.forEach((diff, diffIndex) => {
+                const node = {
+                    id: diff.id,
+                    nodeId: diff.nodeId,
+                    x: xOffset + (diffIndex * 220),
+                    y: yOffset,
+                    width: 200,
+                    height: 80,
+                    diff: diff,
+                    parent: headerNode,
+                    children: [],
+                    isSelected: false,
+                    isHovered: false,
+                    isLoaded: diff.id === this.loadedDiffId,
+                    artReference: diff.artReference,
+                    artist: this.extractArtist(diff.artReference),
+                    movement: movement,
+                    color: movementColors[movement] || '#FF69B4'
+                };
+
+                this.nodes.push(node);
+                this.connections.push({
+                    from: headerNode,
+                    to: node
+                });
+
+                maxX = Math.max(maxX, node.x + node.width);
+            });
+
+            yOffset += 120;
+        });
+    }
+
+    buildArtistCentricLayout(diffs) {
+        // Group by artist
+        const artistGroups = new Map();
+        
+        diffs.forEach(diff => {
+            const artist = this.extractArtist(diff.artReference);
+            if (!artistGroups.has(artist)) {
+                artistGroups.set(artist, []);
+            }
+            artistGroups.get(artist).push(diff);
+        });
+
+        const artists = Array.from(artistGroups.keys());
+        let xOffset = 50;
+        const ySpacing = 120;
+        let maxY = 0;
+
+        artists.forEach((artist, artistIndex) => {
+            const artistDiffs = artistGroups.get(artist);
+            let yOffset = 50;
+
+            // Create artist header
+            const headerNode = {
+                id: `artist-${artist}`,
+                nodeId: artist,
+                x: xOffset,
+                y: yOffset,
+                width: 200,
+                height: 40,
+                diff: null,
+                parent: null,
+                children: [],
+                isSelected: false,
+                isHovered: false,
+                isLoaded: false,
+                isHeader: true,
+                artist: artist
+            };
+
+            this.nodes.push(headerNode);
+            yOffset += 80;
+
+            // Add diffs for this artist
+            artistDiffs.forEach((diff, diffIndex) => {
+                const node = {
+                    id: diff.id,
+                    nodeId: diff.nodeId,
+                    x: xOffset,
+                    y: yOffset + (diffIndex * 100),
+                    width: 200,
+                    height: 80,
+                    diff: diff,
+                    parent: headerNode,
+                    children: [],
+                    isSelected: false,
+                    isHovered: false,
+                    isLoaded: diff.id === this.loadedDiffId,
+                    artReference: diff.artReference,
+                    artist: artist,
+                    movement: this.classifyArtisticMovement(diff.artReference)
+                };
+
+                this.nodes.push(node);
+                this.connections.push({
+                    from: headerNode,
+                    to: node
+                });
+
+                maxY = Math.max(maxY, node.y + node.height);
+            });
+
+            xOffset += 250;
+        });
+    }
+
+    buildStyleNetworkLayout(diffs) {
+        // Create a force-directed layout simulation
+        const nodes = diffs.map((diff, index) => ({
+            id: diff.id,
+            diff: diff,
+            x: 100 + Math.random() * 600,
+            y: 100 + Math.random() * 400,
+            vx: 0,
+            vy: 0,
+            artReference: diff.artReference,
+            artist: this.extractArtist(diff.artReference),
+            movement: this.classifyArtisticMovement(diff.artReference)
+        }));
+
+        // Simple force simulation
+        for (let iteration = 0; iteration < 50; iteration++) {
+            nodes.forEach(node => {
+                node.vx *= 0.9;
+                node.vy *= 0.9;
+            });
+
+            // Repulsion between nodes
+            for (let i = 0; i < nodes.length; i++) {
+                for (let j = i + 1; j < nodes.length; j++) {
+                    const dx = nodes[j].x - nodes[i].x;
+                    const dy = nodes[j].y - nodes[i].y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance > 0) {
+                        const force = 1000 / (distance * distance);
+                        const fx = (dx / distance) * force;
+                        const fy = (dy / distance) * force;
+                        
+                        nodes[i].vx -= fx;
+                        nodes[i].vy -= fy;
+                        nodes[j].vx += fx;
+                        nodes[j].vy += fy;
+                    }
+                }
+            }
+
+            // Attraction for similar movements
+            for (let i = 0; i < nodes.length; i++) {
+                for (let j = i + 1; j < nodes.length; j++) {
+                    if (nodes[i].movement === nodes[j].movement) {
+                        const dx = nodes[j].x - nodes[i].x;
+                        const dy = nodes[j].y - nodes[i].y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance > 0) {
+                            const force = distance * 0.01;
+                            const fx = (dx / distance) * force;
+                            const fy = (dy / distance) * force;
+                            
+                            nodes[i].vx += fx;
+                            nodes[i].vy += fy;
+                            nodes[j].vx -= fx;
+                            nodes[j].vy -= fy;
+                        }
+                    }
+                }
+            }
+
+            // Update positions
+            nodes.forEach(node => {
+                node.x += node.vx;
+                node.y += node.vy;
+                
+                // Keep within bounds
+                node.x = Math.max(50, Math.min(750, node.x));
+                node.y = Math.max(50, Math.min(550, node.y));
+            });
+        }
+
+        // Convert to our node format
+        nodes.forEach((node, index) => {
+            const diffNode = {
+                id: node.id,
+                nodeId: node.diff.nodeId,
+                x: node.x,
+                y: node.y,
+                width: 200,
+                height: 80,
+                diff: node.diff,
+                parent: null,
+                children: [],
+                isSelected: false,
+                isHovered: false,
+                isLoaded: node.id === this.loadedDiffId,
+                artReference: node.artReference,
+                artist: node.artist,
+                movement: node.movement
+            };
+
+            this.nodes.push(diffNode);
+        });
+    }
+
+    extractArtist(artReference) {
+        const artistMatch = artReference.match(/by\s+([^,]+)/i);
+        return artistMatch ? artistMatch[1].trim() : 'Unknown Artist';
+    }
+
+    classifyArtisticMovement(artReference) {
+        const reference = artReference.toLowerCase();
+        
+        if (reference.includes('monet') || reference.includes('renoir') || reference.includes('degas')) {
+            return 'impressionism';
+        } else if (reference.includes('van gogh') || reference.includes('munch') || reference.includes('klimt')) {
+            return 'expressionism';
+        } else if (reference.includes('picasso') || reference.includes('braque')) {
+            return 'cubism';
+        } else if (reference.includes('pollock') || reference.includes('rothko') || reference.includes('kandinsky')) {
+            return 'abstract';
+        } else if (reference.includes('dali') || reference.includes('magritte')) {
+            return 'surrealism';
+        } else if (reference.includes('mondrian') || reference.includes('malevich')) {
+            return 'minimalism';
+        } else if (reference.includes('warhol') || reference.includes('lichtenstein')) {
+            return 'modern';
+        } else {
+            return 'contemporary';
+        }
+    }
+
     drawDivConnections() {
         this.connections.forEach(connection => {
             const line = document.createElement('div');
@@ -1176,6 +1694,253 @@ class DiffManager {
         });
     }
 
+    drawArtReferenceConnections() {
+        console.log('Drawing art reference connections:', this.connections.length);
+        this.connections.forEach(connection => {
+            const fromNode = connection.from;
+            const toNode = connection.to;
+            
+            // Calculate connection points
+            const fromX = fromNode.x + fromNode.width / 2;
+            const fromY = fromNode.y + fromNode.height;
+            const toX = toNode.x + toNode.width / 2;
+            const toY = toNode.y;
+            
+            // Create connection line
+            const connectionLine = document.createElement('div');
+            const length = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
+            const angle = Math.atan2(toY - fromY, toX - fromX) * 180 / Math.PI;
+            
+            connectionLine.style.cssText = `
+                position: absolute;
+                left: ${fromX}px;
+                top: ${fromY}px;
+                width: ${length}px;
+                height: 2px;
+                background: linear-gradient(90deg, ${fromNode.color || '#ff69b4'}, ${toNode.color || '#ff69b4'});
+                transform-origin: 0 0;
+                transform: rotate(${angle}deg);
+                pointer-events: none;
+                z-index: 1;
+                opacity: 0.7;
+            `;
+            
+            this.svg.appendChild(connectionLine);
+        });
+    }
+
+    updateArtMapLegend() {
+        if (!this.detailPanel) return;
+        
+        // Clear existing content
+        this.detailPanel.innerHTML = '';
+        
+        // Create legend based on current layout
+        const legendTitle = document.createElement('h3');
+        legendTitle.textContent = '🎨 Art Reference Map Legend';
+        legendTitle.style.cssText = `
+            color: white;
+            font-family: 'Bianzhidai', monospace;
+            font-size: 16px;
+            margin-bottom: 20px;
+            text-align: center;
+        `;
+        this.detailPanel.appendChild(legendTitle);
+
+        switch (this.currentLayout) {
+            case 'artistic_movement':
+                this.createMovementLegend();
+                break;
+            case 'artist_centric':
+                this.createArtistLegend();
+                break;
+            case 'style_network':
+                this.createNetworkLegend();
+                break;
+            default:
+                this.createChronologicalLegend();
+        }
+
+        // Add layout info
+        const layoutInfo = document.createElement('div');
+        layoutInfo.style.cssText = `
+            margin-top: 20px;
+            padding: 15px;
+            background-color: rgba(255, 105, 180, 0.1);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 105, 180, 0.3);
+        `;
+        
+        const layoutTitle = document.createElement('h4');
+        layoutTitle.textContent = 'Current Layout: ' + this.getLayoutDisplayName();
+        layoutTitle.style.cssText = `
+            color: #ff69b4;
+            font-family: 'Bianzhidai', monospace;
+            font-size: 14px;
+            margin-bottom: 10px;
+        `;
+        layoutInfo.appendChild(layoutTitle);
+        
+        const layoutDesc = document.createElement('p');
+        layoutDesc.textContent = this.getLayoutDescription();
+        layoutDesc.style.cssText = `
+            color: rgba(255, 255, 255, 0.8);
+            font-family: 'Bianzhidai', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+        `;
+        layoutInfo.appendChild(layoutDesc);
+        
+        this.detailPanel.appendChild(layoutInfo);
+    }
+
+    createMovementLegend() {
+        const movements = ['impressionism', 'expressionism', 'cubism', 'abstract', 'surrealism', 'minimalism', 'modern', 'contemporary'];
+        const colors = {
+            'impressionism': '#FF6B6B',
+            'expressionism': '#4ECDC4',
+            'cubism': '#45B7D1',
+            'abstract': '#96CEB4',
+            'surrealism': '#FFEAA7',
+            'minimalism': '#DDA0DD',
+            'modern': '#6C5B7B',
+            'contemporary': '#C06C84'
+        };
+
+        movements.forEach(movement => {
+            const item = document.createElement('div');
+            item.style.cssText = `
+                display: flex;
+                align-items: center;
+                margin-bottom: 10px;
+                padding: 8px;
+                background-color: rgba(255, 255, 255, 0.05);
+                border-radius: 6px;
+            `;
+            
+            const colorBox = document.createElement('div');
+            colorBox.style.cssText = `
+                width: 20px;
+                height: 20px;
+                background-color: ${colors[movement]};
+                border-radius: 4px;
+                margin-right: 10px;
+            `;
+            
+            const label = document.createElement('span');
+            label.textContent = movement.charAt(0).toUpperCase() + movement.slice(1);
+            label.style.cssText = `
+                color: white;
+                font-family: 'Bianzhidai', monospace;
+                font-size: 12px;
+            `;
+            
+            item.appendChild(colorBox);
+            item.appendChild(label);
+            this.detailPanel.appendChild(item);
+        });
+    }
+
+    createArtistLegend() {
+        const artists = new Set();
+        this.nodes.forEach(node => {
+            if (node.artist && !node.isHeader) {
+                artists.add(node.artist);
+            }
+        });
+
+        artists.forEach(artist => {
+            const item = document.createElement('div');
+            item.style.cssText = `
+                display: flex;
+                align-items: center;
+                margin-bottom: 10px;
+                padding: 8px;
+                background-color: rgba(255, 255, 255, 0.05);
+                border-radius: 6px;
+            `;
+            
+            const icon = document.createElement('span');
+            icon.textContent = '👨‍🎨';
+            icon.style.cssText = `
+                margin-right: 10px;
+                font-size: 16px;
+            `;
+            
+            const label = document.createElement('span');
+            label.textContent = artist;
+            label.style.cssText = `
+                color: white;
+                font-family: 'Bianzhidai', monospace;
+                font-size: 12px;
+            `;
+            
+            item.appendChild(icon);
+            item.appendChild(label);
+            this.detailPanel.appendChild(item);
+        });
+    }
+
+    createNetworkLegend() {
+        const legend = document.createElement('div');
+        legend.style.cssText = `
+            color: rgba(255, 255, 255, 0.8);
+            font-family: 'Bianzhidai', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+        `;
+        legend.innerHTML = `
+            <p><strong>🕸️ Style Network Layout</strong></p>
+            <p>Nodes are positioned using force-directed layout:</p>
+            <ul style="margin-left: 20px;">
+                <li>Similar artistic movements attract</li>
+                <li>All nodes repel each other</li>
+                <li>Clusters show style relationships</li>
+            </ul>
+        `;
+        this.detailPanel.appendChild(legend);
+    }
+
+    createChronologicalLegend() {
+        const legend = document.createElement('div');
+        legend.style.cssText = `
+            color: rgba(255, 255, 255, 0.8);
+            font-family: 'Bianzhidai', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+        `;
+        legend.innerHTML = `
+            <p><strong>📅 Chronological Layout</strong></p>
+            <p>Diffs are arranged by creation time:</p>
+            <ul style="margin-left: 20px;">
+                <li>Left to right: Time progression</li>
+                <li>Top to bottom: Node grouping</li>
+                <li>Shows development over time</li>
+            </ul>
+        `;
+        this.detailPanel.appendChild(legend);
+    }
+
+    getLayoutDisplayName() {
+        const names = {
+            'chronological': '📅 Chronological',
+            'artistic_movement': '🎭 Artistic Movement',
+            'artist_centric': '👨‍🎨 Artist Centric',
+            'style_network': '🕸️ Style Network'
+        };
+        return names[this.currentLayout] || this.currentLayout;
+    }
+
+    getLayoutDescription() {
+        const descriptions = {
+            'chronological': 'Diffs arranged by creation time, showing the evolution of your shaders over time.',
+            'artistic_movement': 'Diffs grouped by artistic movement, revealing patterns in your visual style choices.',
+            'artist_centric': 'Diffs organized by referenced artists, showing your artistic influences.',
+            'style_network': 'Force-directed layout showing relationships between different visual styles and movements.'
+        };
+        return descriptions[this.currentLayout] || 'Custom layout';
+    }
+
     drawDivNodes() {
         console.log('Drawing nodes:', this.nodes.length);
         this.nodes.forEach(node => {
@@ -1183,90 +1948,221 @@ class DiffManager {
             const nodeDiv = document.createElement('div');
             nodeDiv.setAttribute('data-node-id', node.id);
             
-            // Determine background color based on state
+            // Determine background color based on state and layout
             let bgColor;
-            if (node.isLoaded) {
+            if (node.isHeader) {
+                bgColor = node.color || 'rgba(255, 105, 180, 0.9)';
+            } else if (node.isLoaded) {
                 bgColor = 'rgba(255, 105, 180, 0.9)'; // Bright pink for loaded
             } else if (node.isSelected) {
                 bgColor = 'rgba(255, 105, 180, 0.8)';
             } else if (node.isHovered) {
                 bgColor = 'rgba(255, 105, 180, 0.6)';
+            } else if (node.color) {
+                bgColor = node.color + '80'; // Add transparency
             } else {
                 bgColor = 'rgba(68, 68, 68, 0.8)';
             }
 
-            nodeDiv.style.cssText = `position: absolute; left: ${node.x}px; top: ${node.y}px; width: ${node.width}px; height: ${node.height}px; background-color: ${bgColor}; border: 2px solid #ff69b4; border-radius: 20px; cursor: pointer; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 10px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); transition: all 0.3s ease; z-index: 2; backdrop-filter: blur(3px); ${node.isLoaded ? 'box-shadow: 0 0 20px rgba(255, 105, 180, 0.5);' : ''} border: 3px solid red !important;`;
+            const borderColor = node.color || '#ff69b4';
+            const isHeader = node.isHeader ? 'border-radius: 10px;' : 'border-radius: 20px;';
 
-            // Node name
-            const nameDiv = document.createElement('div');
-            nameDiv.textContent = node.nodeId;
-            nameDiv.style.cssText = `font-weight: bold; color: #ffffff; font-family: 'Bianzhidai', monospace; font-size: 12px; margin-bottom: 4px;`;
-            nodeDiv.appendChild(nameDiv);
+            nodeDiv.style.cssText = `position: absolute; left: ${node.x}px; top: ${node.y}px; width: ${node.width}px; height: ${node.height}px; background-color: ${bgColor}; border: 2px solid ${borderColor}; ${isHeader} cursor: pointer; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 10px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); transition: all 0.3s ease; z-index: 2; backdrop-filter: blur(3px); ${node.isLoaded ? 'box-shadow: 0 0 20px rgba(255, 105, 180, 0.5);' : ''}`;
 
-            // Description (single short sentence)
-            const descDiv = document.createElement('div');
-            descDiv.textContent = node.diff.summary || 'Shader modification';
-            descDiv.style.cssText = `color: #cccccc; font-family: 'Bianzhidai', monospace; font-size: 10px; text-align: center; line-height: 1.2;`;
-            nodeDiv.appendChild(descDiv);
+            if (node.isHeader) {
+                // Header node (movement or artist)
+                const headerText = document.createElement('div');
+                headerText.textContent = node.movement || node.artist || node.nodeId;
+                headerText.style.cssText = `font-weight: bold; color: #ffffff; font-family: 'Bianzhidai', monospace; font-size: 14px; text-align: center; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);`;
+                nodeDiv.appendChild(headerText);
+            } else {
+                // Regular diff node
+                // Node name
+                const nameDiv = document.createElement('div');
+                nameDiv.textContent = node.nodeId;
+                nameDiv.style.cssText = `font-weight: bold; color: #ffffff; font-family: 'Bianzhidai', monospace; font-size: 12px; margin-bottom: 4px;`;
+                nodeDiv.appendChild(nameDiv);
 
-            // Timestamp
-            const timestamp = document.createElement('div');
-            timestamp.style.cssText = `
-                color: rgba(255, 255, 255, 0.8);
-                font-family: 'Bianzhidai', monospace;
-                font-size: 8px;
-                text-align: center;
-            `;
-            timestamp.textContent = new Date(node.diff.timestamp).toLocaleTimeString();
-            nodeDiv.appendChild(timestamp);
+                // Art reference
+                if (node.artReference) {
+                    const artRefDiv = document.createElement('div');
+                    artRefDiv.textContent = node.artReference;
+                    artRefDiv.style.cssText = `color: #ffffff; font-family: 'Bianzhidai', monospace; font-size: 9px; text-align: center; line-height: 1.2; font-style: italic; margin-bottom: 2px;`;
+                    nodeDiv.appendChild(artRefDiv);
+                }
 
-            // Add loaded indicator
-            if (node.isLoaded) {
-                const loadedIndicator = document.createElement('div');
-                loadedIndicator.style.cssText = `
-                    position: absolute;
-                    top: -5px;
-                    right: -5px;
-                    width: 15px;
-                    height: 15px;
-                    background-color: #00ff00;
-                    border-radius: 50%;
-                    border: 2px solid white;
+                // Description (single short sentence)
+                const descDiv = document.createElement('div');
+                descDiv.textContent = node.diff.summary || 'Shader modification';
+                descDiv.style.cssText = `color: #cccccc; font-family: 'Bianzhidai', monospace; font-size: 10px; text-align: center; line-height: 1.2;`;
+                nodeDiv.appendChild(descDiv);
+
+                // Timestamp
+                const timestamp = document.createElement('div');
+                timestamp.style.cssText = `
+                    color: rgba(255, 255, 255, 0.8);
+                    font-family: 'Bianzhidai', monospace;
+                    font-size: 8px;
+                    text-align: center;
                 `;
-                nodeDiv.appendChild(loadedIndicator);
+                timestamp.textContent = new Date(node.diff.timestamp).toLocaleTimeString();
+                nodeDiv.appendChild(timestamp);
+
+                // Add loaded indicator
+                if (node.isLoaded) {
+                    const loadedIndicator = document.createElement('div');
+                    loadedIndicator.style.cssText = `
+                        position: absolute;
+                        top: -5px;
+                        right: -5px;
+                        width: 15px;
+                        height: 15px;
+                        background-color: #00ff00;
+                        border-radius: 50%;
+                        border: 2px solid white;
+                    `;
+                    nodeDiv.appendChild(loadedIndicator);
+                }
+
+                // Add artwork image if available
+                if (node.diff.artReference) {
+                    const artworkContainer = document.createElement('div');
+                    artworkContainer.style.cssText = `
+                        position: absolute;
+                        top: -30px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        width: 60px;
+                        height: 60px;
+                        border-radius: 50%;
+                        overflow: hidden;
+                        border: 2px solid ${borderColor};
+                        background-color: rgba(30, 30, 30, 0.8);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        z-index: 3;
+                    `;
+
+                    // Loading placeholder
+                    const loadingText = document.createElement('div');
+                    loadingText.textContent = '🎨';
+                    loadingText.style.cssText = `
+                        color: ${borderColor};
+                        font-size: 20px;
+                        text-align: center;
+                    `;
+                    artworkContainer.appendChild(loadingText);
+
+                    // Load artwork image
+                    const loadArtworkForNode = async () => {
+                        // Check if we already have stored artwork data
+                        if (node.diff.artworkImage && node.diff.artworkTitle) {
+                            // Remove loading text
+                            artworkContainer.removeChild(loadingText);
+                            
+                            // Create artwork image from stored data
+                            const artworkImg = document.createElement('img');
+                            artworkImg.src = node.diff.artworkImage;
+                            artworkImg.alt = node.diff.artworkTitle;
+                            artworkImg.style.cssText = `
+                                width: 100%;
+                                height: 100%;
+                                object-fit: cover;
+                                border-radius: 50%;
+                            `;
+                            
+                            // Add tooltip with artwork title
+                            artworkImg.title = node.diff.artworkTitle;
+                            
+                            artworkContainer.appendChild(artworkImg);
+                            return;
+                        }
+                        
+                        // Fallback to API call if no stored data
+                        try {
+                            const response = await fetch('/api/artsearch/find-artwork', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({ artReference: node.diff.artReference })
+                            });
+                            
+                            if (response.ok) {
+                                const data = await response.json();
+                                if (data.success && data.artwork) {
+                                    // Remove loading text
+                                    artworkContainer.removeChild(loadingText);
+                                    
+                                    // Create artwork image
+                                    const artworkImg = document.createElement('img');
+                                    artworkImg.src = data.artwork.image;
+                                    artworkImg.alt = data.artwork.title;
+                                    artworkImg.style.cssText = `
+                                        width: 100%;
+                                        height: 100%;
+                                        object-fit: cover;
+                                        border-radius: 50%;
+                                    `;
+                                    
+                                    // Add tooltip with artwork title
+                                    artworkImg.title = data.artwork.title;
+                                    
+                                    artworkContainer.appendChild(artworkImg);
+                                } else {
+                                    // No artwork found, keep the emoji
+                                    loadingText.textContent = '🎨';
+                                    loadingText.title = 'No artwork found';
+                                }
+                            } else {
+                                // API error, keep the emoji
+                                loadingText.textContent = '🎨';
+                                loadingText.title = 'Failed to load artwork';
+                            }
+                        } catch (error) {
+                            console.error('Error loading artwork for node:', error);
+                            // Keep the emoji on error
+                            loadingText.textContent = '🎨';
+                            loadingText.title = 'Error loading artwork';
+                        }
+                    };
+
+                    // Load artwork image
+                    loadArtworkForNode();
+                    nodeDiv.appendChild(artworkContainer);
+                }
             }
 
-            // Add click handler
-            nodeDiv.addEventListener('click', (e) => {
-                console.log('=== CLICK EVENT TRIGGERED ===');
-                console.log('Event target:', e.target);
-                console.log('Event currentTarget:', e.currentTarget);
-                console.log('Node ID:', node.id);
-                console.log('Node data:', node.diff);
-                
-                e.preventDefault(); // Prevent default behavior
-                e.stopPropagation(); // Stop event bubbling
-                
-                console.log('Node clicked:', node.id, node.diff); // Debug log
-                this.loadDiffIntoNode(node.diff);
-                this.selectedNode = node;
-                this.showDiffDetails(node);
-                this.renderDivs(); // Re-render to update selected/loaded state
-            });
+            // Add click handler (only for non-header nodes)
+            if (!node.isHeader) {
+                nodeDiv.addEventListener('click', (e) => {
+                    console.log('=== CLICK EVENT TRIGGERED ===');
+                    console.log('Event target:', e.target);
+                    console.log('Event currentTarget:', e.currentTarget);
+                    console.log('Node ID:', node.id);
+                    console.log('Node data:', node.diff);
+                    
+                    e.preventDefault(); // Prevent default behavior
+                    e.stopPropagation(); // Stop event bubbling
+                    
+                    console.log('Node clicked:', node.id, node.diff); // Debug log
+                    this.loadDiffIntoNode(node.diff);
+                    this.selectedNode = node;
+                    this.showDiffDetails(node);
+                    this.renderDivs(); // Re-render to update selected/loaded state
+                });
 
-            // Add hover handlers (removed re-rendering to prevent click event loss)
-            nodeDiv.addEventListener('mouseenter', () => { 
-                console.log('Mouse entered node:', node.id);
-                node.isHovered = true; 
-                // Don't re-render on hover - it destroys the click events
-                // this.renderDivs(); 
-            });
-            nodeDiv.addEventListener('mouseleave', () => { 
-                console.log('Mouse left node:', node.id);
-                node.isHovered = false; 
-                // Don't re-render on hover - it destroys the click events
-                // this.renderDivs(); 
-            });
+                // Add hover handlers
+                nodeDiv.addEventListener('mouseenter', () => { 
+                    console.log('Mouse entered node:', node.id);
+                    node.isHovered = true; 
+                });
+                nodeDiv.addEventListener('mouseleave', () => { 
+                    console.log('Mouse left node:', node.id);
+                    node.isHovered = false; 
+                });
+            }
 
             this.svg.appendChild(nodeDiv);
             console.log('Node div added to DOM:', nodeDiv);
@@ -1359,10 +2255,10 @@ class DiffManager {
             // Debug info
             const debugInfo = document.createElement('div');
             debugInfo.style.cssText = `margin: 0 0 10px 0; color: #ff69b4; font-family: 'Bianzhidai', monospace; font-size: 10px;`;
-            debugInfo.textContent = `Base64 length: ${node.diff.canvasImage.length}, Type: ${node.diff.canvasImageType || 'image/png'}`;
+            debugInfo.textContent = `Base64 length: ${node.diff.canvasImage.length}, Type: ${node.diff.canvasImageType || 'image/jpeg'}`;
             
             const screenshotImg = document.createElement('img');
-            screenshotImg.src = `data:${node.diff.canvasImageType || 'image/png'};base64,${node.diff.canvasImage}`;
+            screenshotImg.src = `data:${node.diff.canvasImageType || 'image/jpeg'};base64,${node.diff.canvasImage}`;
             screenshotImg.style.cssText = `
                 width: 100%;
                 max-width: 300px;
@@ -1416,6 +2312,120 @@ class DiffManager {
         artReferenceSection.appendChild(artReferenceTitle);
         artReferenceSection.appendChild(artReferenceText);
         
+        // Artwork Image Section
+        const artworkImageSection = document.createElement('div');
+        artworkImageSection.style.cssText = `margin: 10px 0; padding: 10px; background-color: rgba(30, 30, 30, 0.2); border-radius: 8px;`;
+        const artworkImageTitle = document.createElement('h4');
+        artworkImageTitle.textContent = 'Artwork Image';
+        artworkImageTitle.style.cssText = `margin: 0 0 10px 0; color: #ff69b4; font-family: 'Bianzhidai', monospace; font-size: 14px;`;
+        artworkImageSection.appendChild(artworkImageTitle);
+        
+        // Loading state for artwork image
+        const artworkLoading = document.createElement('div');
+        artworkLoading.textContent = 'Loading artwork...';
+        artworkLoading.style.cssText = `color: #cccccc; font-family: 'Bianzhidai', monospace; font-size: 12px; text-align: center; padding: 20px;`;
+        artworkImageSection.appendChild(artworkLoading);
+        
+        // Function to load artwork image
+        const loadArtworkImage = async () => {
+            // Check if we already have stored artwork data
+            if (node.diff.artworkImage && node.diff.artworkTitle) {
+                // Remove loading state
+                artworkImageSection.removeChild(artworkLoading);
+                
+                // Create artwork image from stored data
+                const artworkImg = document.createElement('img');
+                artworkImg.src = node.diff.artworkImage;
+                artworkImg.alt = node.diff.artworkTitle;
+                artworkImg.style.cssText = `
+                    width: 100%;
+                    max-width: 300px;
+                    height: auto;
+                    border-radius: 4px;
+                    border: 1px solid #ff69b4;
+                    margin: 0;
+                `;
+                
+                // Add artwork title
+                const artworkTitle = document.createElement('div');
+                artworkTitle.textContent = node.diff.artworkTitle;
+                artworkTitle.style.cssText = `
+                    color: #ffffff;
+                    font-family: 'Bianzhidai', monospace;
+                    font-size: 11px;
+                    text-align: center;
+                    margin-top: 5px;
+                    font-style: italic;
+                `;
+                
+                artworkImageSection.appendChild(artworkImg);
+                artworkImageSection.appendChild(artworkTitle);
+                return;
+            }
+            
+            // Fallback to API call if no stored data
+            try {
+                const response = await fetch('/api/artsearch/find-artwork', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ artReference: artRef })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.artwork) {
+                        // Remove loading state
+                        artworkImageSection.removeChild(artworkLoading);
+                        
+                        // Create artwork image
+                        const artworkImg = document.createElement('img');
+                        artworkImg.src = data.artwork.image;
+                        artworkImg.alt = data.artwork.title;
+                        artworkImg.style.cssText = `
+                            width: 100%;
+                            max-width: 300px;
+                            height: auto;
+                            border-radius: 4px;
+                            border: 1px solid #ff69b4;
+                            margin: 0;
+                        `;
+                        
+                        // Add artwork title
+                        const artworkTitle = document.createElement('div');
+                        artworkTitle.textContent = data.artwork.title;
+                        artworkTitle.style.cssText = `
+                            color: #ffffff;
+                            font-family: 'Bianzhidai', monospace;
+                            font-size: 11px;
+                            text-align: center;
+                            margin-top: 5px;
+                            font-style: italic;
+                        `;
+                        
+                        artworkImageSection.appendChild(artworkImg);
+                        artworkImageSection.appendChild(artworkTitle);
+                    } else {
+                        // No artwork found
+                        artworkLoading.textContent = 'No artwork image found';
+                        artworkLoading.style.color = '#888888';
+                    }
+                } else {
+                    // API error
+                    artworkLoading.textContent = 'Failed to load artwork';
+                    artworkLoading.style.color = '#ff4444';
+                }
+            } catch (error) {
+                console.error('Error loading artwork:', error);
+                artworkLoading.textContent = 'Error loading artwork';
+                artworkLoading.style.color = '#ff4444';
+            }
+        };
+        
+        // Load artwork image
+        loadArtworkImage();
+        
         // Add regenerate button if art reference is missing
         if (!node.diff.artReference) {
             const regenerateButton = document.createElement('button');
@@ -1435,6 +2445,104 @@ class DiffManager {
                         const data = await response.json();
                         node.diff.artReference = data.artReference;
                         artReferenceText.textContent = data.artReference;
+                        
+                        // Update stored artwork data if available
+                        if (data.artwork) {
+                            node.diff.artworkImage = data.artwork.image;
+                            node.diff.artworkTitle = data.artwork.title;
+                        }
+                        
+                        // Reload artwork image with new reference
+                        artworkImageSection.innerHTML = '';
+                        artworkImageSection.appendChild(artworkImageTitle);
+                        const newLoading = document.createElement('div');
+                        newLoading.textContent = 'Loading artwork...';
+                        newLoading.style.cssText = `color: #cccccc; font-family: 'Bianzhidai', monospace; font-size: 12px; text-align: center; padding: 20px;`;
+                        artworkImageSection.appendChild(newLoading);
+                        
+                        // Update art reference and reload image
+                        const newArtRef = data.artReference;
+                        artReferenceText.textContent = newArtRef;
+                        
+                        // Use stored artwork data if available, otherwise make API call
+                        if (data.artwork) {
+                            artworkImageSection.removeChild(newLoading);
+                            
+                            const newArtworkImg = document.createElement('img');
+                            newArtworkImg.src = data.artwork.image;
+                            newArtworkImg.alt = data.artwork.title;
+                            newArtworkImg.style.cssText = `
+                                width: 100%;
+                                max-width: 300px;
+                                height: auto;
+                                border-radius: 4px;
+                                border: 1px solid #ff69b4;
+                                margin: 0;
+                            `;
+                            
+                            const newArtworkTitle = document.createElement('div');
+                            newArtworkTitle.textContent = data.artwork.title;
+                            newArtworkTitle.style.cssText = `
+                                color: #ffffff;
+                                font-family: 'Bianzhidai', monospace;
+                                font-size: 11px;
+                                text-align: center;
+                                margin-top: 5px;
+                                font-style: italic;
+                            `;
+                            
+                            artworkImageSection.appendChild(newArtworkImg);
+                            artworkImageSection.appendChild(newArtworkTitle);
+                        } else {
+                            // Fallback to API call if no stored data
+                            const newResponse = await fetch('/api/artsearch/find-artwork', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({ artReference: newArtRef })
+                            });
+                            
+                            if (newResponse.ok) {
+                                const newData = await newResponse.json();
+                                if (newData.success && newData.artwork) {
+                                    artworkImageSection.removeChild(newLoading);
+                                    
+                                    const newArtworkImg = document.createElement('img');
+                                    newArtworkImg.src = newData.artwork.image;
+                                    newArtworkImg.alt = newData.artwork.title;
+                                    newArtworkImg.style.cssText = `
+                                        width: 100%;
+                                        max-width: 300px;
+                                        height: auto;
+                                        border-radius: 4px;
+                                        border: 1px solid #ff69b4;
+                                        margin: 0;
+                                    `;
+                                    
+                                    const newArtworkTitle = document.createElement('div');
+                                    newArtworkTitle.textContent = newData.artwork.title;
+                                    newArtworkTitle.style.cssText = `
+                                        color: #ffffff;
+                                        font-family: 'Bianzhidai', monospace;
+                                        font-size: 11px;
+                                        text-align: center;
+                                        margin-top: 5px;
+                                        font-style: italic;
+                                    `;
+                                    
+                                    artworkImageSection.appendChild(newArtworkImg);
+                                    artworkImageSection.appendChild(newArtworkTitle);
+                                } else {
+                                    newLoading.textContent = 'No artwork image found';
+                                    newLoading.style.color = '#888888';
+                                }
+                            } else {
+                                newLoading.textContent = 'Failed to load artwork';
+                                newLoading.style.color = '#ff4444';
+                            }
+                        }
+                        
                         regenerateButton.remove();
                     } else {
                         // Reset button on error
@@ -1454,6 +2562,7 @@ class DiffManager {
         }
         
         this.detailPanel.appendChild(artReferenceSection);
+        this.detailPanel.appendChild(artworkImageSection);
 
         // Timestamp
         const timestampSection = document.createElement('div');
@@ -1538,6 +2647,10 @@ class DiffManager {
     setupCleanup() {
         window.addEventListener('beforeunload', () => {
             this.cleanupAllDiffs();
+            // Clear cooldown interval
+            if (this.cooldownInterval) {
+                clearInterval(this.cooldownInterval);
+            }
         });
     }
 

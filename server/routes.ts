@@ -5,6 +5,8 @@ import { nodeSchema } from "@shared/schema";
 import { diffService } from "./services/diffService";
 import { isOpenAIAvailable } from "./services/gpt";
 import { sendTextMessage, sendImageMessage, isAnthropicAvailable } from "./services/anthropic";
+import { artSearchService } from "./services/artSearch";
+import { googleSearchService } from "./services/googleSearch";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -157,7 +159,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           diff.artReference = artReference;
           
-          res.json({ success: true, artReference });
+          // Fetch artwork image for the new art reference
+          let artwork = null;
+          if (artReference && artReference !== 'Art reference generation failed') {
+              // Use the cached method from diffService
+              artwork = await diffService.findArtworkForReference(artReference);
+              if (artwork) {
+                  diff.artworkImage = artwork.image;
+                  diff.artworkTitle = artwork.title;
+              }
+          }
+          
+          res.json({ 
+              success: true, 
+              artReference,
+              artwork: artwork ? {
+                  image: artwork.image,
+                  title: artwork.title
+              } : null
+          });
       } catch (error) {
           console.error('Error regenerating art reference:', error);
           res.status(500).json({ error: 'Failed to regenerate art reference' });
@@ -209,6 +229,181 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Error sending image to Anthropic:', error);
       res.status(500).json({ 
         error: error instanceof Error ? error.message : "Failed to send image to Anthropic" 
+      });
+    }
+  });
+
+  // ArtSearch API endpoint
+  app.post("/api/artsearch/find-artwork", async (req, res) => {
+    try {
+      const { artReference } = req.body;
+      
+      if (!artReference) {
+        return res.status(400).json({ error: "Art reference is required" });
+      }
+
+      if (!artSearchService.isAvailable()) {
+        return res.status(503).json({ 
+          error: "ArtSearch API key not configured. Please add ARTSEARCH_API to your environment variables." 
+        });
+      }
+
+      const artwork = await artSearchService.findArtworkForReference(artReference);
+      
+      if (artwork) {
+        res.json({ success: true, artwork });
+      } else {
+        res.json({ success: false, message: "No artwork found for the given reference" });
+      }
+    } catch (error) {
+      console.error('Error finding artwork:', error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to find artwork" 
+      });
+    }
+  });
+
+  // Test endpoint to get any image from ArtSearch
+  app.get("/api/artsearch/test", async (req, res) => {
+    try {
+      if (!artSearchService.isAvailable()) {
+        return res.status(503).json({ 
+          error: "ArtSearch API key not configured. Please add ARTSEARCH_API to your environment variables." 
+        });
+      }
+
+      // Try a simple search for "painting" to get any image
+      const result = await artSearchService.searchArtworks("painting", { number: 1 });
+      
+      if (result && result.artworks && result.artworks.length > 0) {
+        res.json({ 
+          success: true, 
+          artwork: result.artworks[0],
+          message: "Successfully retrieved artwork from ArtSearch API"
+        });
+      } else {
+        res.json({ 
+          success: false, 
+          message: "No artworks found in ArtSearch API",
+          available: result?.available || 0
+        });
+      }
+    } catch (error) {
+      console.error('Error testing ArtSearch API:', error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to test ArtSearch API",
+        details: error instanceof Error ? error.stack : undefined
+      });
+    }
+  });
+
+  // Get artwork suggestions for a shader
+  app.post("/api/artsearch/suggest", async (req, res) => {
+    try {
+      const { shaderCode, canvasImage } = req.body;
+      
+      if (!shaderCode) {
+        return res.status(400).json({ error: "Shader code is required" });
+      }
+
+      if (!artSearchService.isAvailable()) {
+        return res.status(503).json({ 
+          error: "ArtSearch API key not configured. Please add ARTSEARCH_API to your environment variables." 
+        });
+      }
+
+      const suggestedArtworks = await artSearchService.suggestArtworksForShader(shaderCode, canvasImage);
+      
+      res.json({ 
+        success: true, 
+        artworks: suggestedArtworks,
+        count: suggestedArtworks.length,
+        message: `Found ${suggestedArtworks.length} suggested artworks for your shader`
+      });
+    } catch (error) {
+      console.error('Error suggesting artworks:', error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to suggest artworks" 
+      });
+    }
+  });
+
+  // Google Search API endpoints
+  app.get("/api/google-search/test", async (req, res) => {
+    try {
+      if (!googleSearchService.isAvailable()) {
+        return res.status(503).json({ 
+          error: "Google Search API not configured. Please add GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID to your environment variables." 
+        });
+      }
+
+      const result = await googleSearchService.testConnection();
+      
+      res.json(result);
+    } catch (error) {
+      console.error('Error testing Google Search API:', error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to test Google Search API",
+        details: error instanceof Error ? error.stack : undefined
+      });
+    }
+  });
+
+  app.post("/api/google-search/find-artwork", async (req, res) => {
+    try {
+      const { artReference } = req.body;
+      
+      if (!artReference) {
+        return res.status(400).json({ error: "Art reference is required" });
+      }
+
+      if (!googleSearchService.isAvailable()) {
+        return res.status(503).json({ 
+          error: "Google Search API not configured. Please add GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID to your environment variables." 
+        });
+      }
+
+      const artwork = await googleSearchService.findArtworkForReference(artReference);
+      
+      if (artwork) {
+        res.json({ success: true, artwork });
+      } else {
+        res.json({ success: false, message: "No artwork found for the given reference" });
+      }
+    } catch (error) {
+      console.error('Error finding artwork with Google Search:', error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to find artwork" 
+      });
+    }
+  });
+
+  app.post("/api/google-search/suggest", async (req, res) => {
+    try {
+      const { shaderCode, canvasImage } = req.body;
+      
+      if (!shaderCode) {
+        return res.status(400).json({ error: "Shader code is required" });
+      }
+
+      if (!googleSearchService.isAvailable()) {
+        return res.status(503).json({ 
+          error: "Google Search API not configured. Please add GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID to your environment variables." 
+        });
+      }
+
+      const suggestedArtworks = await googleSearchService.suggestArtworksForShader(shaderCode, canvasImage);
+      
+      res.json({ 
+        success: true, 
+        artworks: suggestedArtworks,
+        count: suggestedArtworks.length,
+        message: `Found ${suggestedArtworks.length} suggested artworks for your shader`
+      });
+    } catch (error) {
+      console.error('Error suggesting artworks with Google Search:', error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to suggest artworks" 
       });
     }
   });
