@@ -51,7 +51,7 @@ async function testArtworkSuggestions() {
         console.log('Shader code preview:', shader.code.substring(0, 100) + '...');
         
         try {
-            const response = await fetch('http://localhost:3000/api/artsearch/suggest', {
+            const response = await fetch('http://localhost:5000/api/artsearch/suggest', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

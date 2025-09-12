@@ -46,8 +46,9 @@ app.use((req, res, next) => {
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: {
-      origin: ["http://localhost:5173", "http://localhost:5000"],
-      methods: ["GET", "POST"]
+      origin: true, // Allow all origins in Replit environment
+      methods: ["GET", "POST"],
+      credentials: true
     }
   });
 
