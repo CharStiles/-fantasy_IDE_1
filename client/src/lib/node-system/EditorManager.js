@@ -70,6 +70,8 @@ class EditorManager {
             matchBrackets: true,
             indentUnit: 4,
             lineWrapping: true,
+            gutters: ["CodeMirror-lint-markers"],
+            lint: true,
             extraKeys: {
                 'Ctrl-Enter': () => this.runCode(),
                 'Cmd-Enter': () => this.runCode(),
@@ -474,7 +476,9 @@ class EditorManager {
                     lineNumbers: true,
                     autoCloseBrackets: true,
                     matchBrackets: true,
-                    indentUnit: 4
+                    indentUnit: 4,
+                    gutters: type === 'webgl' || type === 'webgpu' ? ["CodeMirror-lint-markers"] : [],
+                    lint: type === 'webgl' || type === 'webgpu' ? true : false
                 });
 
                 // Add real-time compilation for WebGL nodes

@@ -1092,9 +1092,9 @@ class DiffManager {
             <option value="style_network">🕸️ Style Network</option>
         `;
         layoutSelect.value = this.currentLayout;
-        layoutSelect.addEventListener('change', (e) => {
+        layoutSelect.addEventListener('change', async (e) => {
             this.currentLayout = e.target.value;
-            this.renderDivs(); // Re-render with new layout
+            await this.renderDivs(); // Re-render with new layout
         });
 
         const clearAllButton = document.createElement('button');
@@ -1120,7 +1120,7 @@ class DiffManager {
         });
         clearAllButton.addEventListener('click', async () => {
             await this.cleanupAllDiffs();
-            this.renderDivs();
+            await this.renderDivs();
         });
 
         const closeButton = document.createElement('button');
@@ -1206,8 +1206,8 @@ class DiffManager {
         this.isVisualizationOpen = true;
 
         // Load diffs and render
-        this.loadDiffs().then(() => {
-            this.renderDivs();
+        this.loadDiffs().then(async () => {
+            await this.renderDivs();
         });
     }
 
@@ -1223,7 +1223,7 @@ class DiffManager {
 
     // Art reference map methods removed - now integrated into main diff history
 
-    renderDivs() {
+    async renderDivs() {
         if (!this.svg) return;
         console.log('Rendering divs with layout:', this.currentLayout);
         this.svg.innerHTML = ''; // Clear left panel
@@ -1233,7 +1233,7 @@ class DiffManager {
         
         if (diffsWithArt.length > 0 && this.currentLayout !== 'chronological') {
             // Use art reference layouts
-            this.buildArtReferenceNodeHierarchy();
+            await this.buildArtReferenceNodeHierarchy();
             this.drawArtReferenceConnections();
             this.drawDivNodes(); // This method now handles both regular and art reference nodes
             this.updateArtMapLegend();
@@ -1310,7 +1310,7 @@ class DiffManager {
         });
     }
 
-    buildArtReferenceNodeHierarchy() {
+    async buildArtReferenceNodeHierarchy() {
         this.nodes = [];
         this.connections = [];
         console.log('Building art reference node hierarchy with layout:', this.currentLayout);
@@ -1326,23 +1326,23 @@ class DiffManager {
 
         switch (this.currentLayout) {
             case 'chronological':
-                this.buildChronologicalLayout(diffsWithArt);
+                await this.buildChronologicalLayout(diffsWithArt);
                 break;
             case 'artistic_movement':
-                this.buildArtisticMovementLayout(diffsWithArt);
+                await this.buildArtisticMovementLayout(diffsWithArt);
                 break;
             case 'artist_centric':
-                this.buildArtistCentricLayout(diffsWithArt);
+                await this.buildArtistCentricLayout(diffsWithArt);
                 break;
             case 'style_network':
-                this.buildStyleNetworkLayout(diffsWithArt);
+                await this.buildStyleNetworkLayout(diffsWithArt);
                 break;
             default:
-                this.buildChronologicalLayout(diffsWithArt);
+                await this.buildChronologicalLayout(diffsWithArt);
         }
     }
 
-    buildChronologicalLayout(diffs) {
+    async buildChronologicalLayout(diffs) {
         // Sort by timestamp
         diffs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         
@@ -1350,7 +1350,7 @@ class DiffManager {
         const ySpacing = 120;
         let maxY = 0;
 
-        diffs.forEach((diff, index) => {
+        for (const [index, diff] of diffs.entries()) {
             const node = {
                 id: diff.id,
                 nodeId: diff.nodeId,
@@ -1366,26 +1366,26 @@ class DiffManager {
                 isLoaded: diff.id === this.loadedDiffId,
                 artReference: diff.artReference,
                 artist: this.extractArtist(diff.artReference),
-                movement: this.classifyArtisticMovement(diff.artReference)
+                movement: await this.classifyArtisticMovement(diff.artReference)
             };
 
             this.nodes.push(node);
             maxY = Math.max(maxY, node.y + node.height);
             xOffset += 250;
-        });
+        }
     }
 
-    buildArtisticMovementLayout(diffs) {
+    async buildArtisticMovementLayout(diffs) {
         // Group by artistic movement
         const movementGroups = new Map();
         
-        diffs.forEach(diff => {
-            const movement = this.classifyArtisticMovement(diff.artReference);
+        for (const diff of diffs) {
+            const movement = await this.classifyArtisticMovement(diff.artReference);
             if (!movementGroups.has(movement)) {
                 movementGroups.set(movement, []);
             }
             movementGroups.get(movement).push(diff);
-        });
+        }
 
         const movements = Array.from(movementGroups.keys());
         const movementColors = {
@@ -1465,7 +1465,7 @@ class DiffManager {
         });
     }
 
-    buildArtistCentricLayout(diffs) {
+    async buildArtistCentricLayout(diffs) {
         // Group by artist
         const artistGroups = new Map();
         
@@ -1482,7 +1482,7 @@ class DiffManager {
         const ySpacing = 120;
         let maxY = 0;
 
-        artists.forEach((artist, artistIndex) => {
+        for (const [artistIndex, artist] of artists.entries()) {
             const artistDiffs = artistGroups.get(artist);
             let yOffset = 50;
 
@@ -1508,7 +1508,7 @@ class DiffManager {
             yOffset += 80;
 
             // Add diffs for this artist
-            artistDiffs.forEach((diff, diffIndex) => {
+            for (const [diffIndex, diff] of artistDiffs.entries()) {
                 const node = {
                     id: diff.id,
                     nodeId: diff.nodeId,
@@ -1524,7 +1524,7 @@ class DiffManager {
                     isLoaded: diff.id === this.loadedDiffId,
                     artReference: diff.artReference,
                     artist: artist,
-                    movement: this.classifyArtisticMovement(diff.artReference)
+                    movement: await this.classifyArtisticMovement(diff.artReference)
                 };
 
                 this.nodes.push(node);
@@ -1534,27 +1534,40 @@ class DiffManager {
                 });
 
                 maxY = Math.max(maxY, node.y + node.height);
-            });
+            }
 
             xOffset += 250;
-        });
+        }
     }
 
-    buildStyleNetworkLayout(diffs) {
+    async buildStyleNetworkLayout(diffs) {
+        // Get window dimensions for proper scaling
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+        const containerWidth = Math.min(windowWidth * 0.8, 1200); // Use 80% of window width, max 1200px
+        const containerHeight = Math.min(windowHeight * 0.7, 800); // Use 70% of window height, max 800px
+        
         // Create a force-directed layout simulation
-        const nodes = diffs.map((diff, index) => ({
-            id: diff.id,
-            diff: diff,
-            x: 100 + Math.random() * 600,
-            y: 100 + Math.random() * 400,
-            vx: 0,
-            vy: 0,
-            artReference: diff.artReference,
-            artist: this.extractArtist(diff.artReference),
-            movement: this.classifyArtisticMovement(diff.artReference)
-        }));
+        const nodes = [];
+        for (const [index, diff] of diffs.entries()) {
+            nodes.push({
+                id: diff.id,
+                diff: diff,
+                x: 100 + Math.random() * (containerWidth - 200), // Scale initial positions
+                y: 100 + Math.random() * (containerHeight - 200), // Scale initial positions
+                vx: 0,
+                vy: 0,
+                artReference: diff.artReference,
+                artist: this.extractArtist(diff.artReference),
+                movement: await this.classifyArtisticMovement(diff.artReference)
+            });
+        }
 
-        // Simple force simulation
+        // Simple force simulation with scaled parameters
+        const scaleFactor = Math.min(containerWidth, containerHeight) / 600; // Scale based on container size
+        const repulsionForce = 1000 * scaleFactor; // Scale repulsion force
+        const attractionForce = 0.01 * scaleFactor; // Scale attraction force
+        
         for (let iteration = 0; iteration < 50; iteration++) {
             nodes.forEach(node => {
                 node.vx *= 0.9;
@@ -1569,7 +1582,7 @@ class DiffManager {
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     
                     if (distance > 0) {
-                        const force = 1000 / (distance * distance);
+                        const force = repulsionForce / (distance * distance);
                         const fx = (dx / distance) * force;
                         const fy = (dy / distance) * force;
                         
@@ -1590,7 +1603,7 @@ class DiffManager {
                         const distance = Math.sqrt(dx * dx + dy * dy);
                         
                         if (distance > 0) {
-                            const force = distance * 0.01;
+                            const force = distance * attractionForce;
                             const fx = (dx / distance) * force;
                             const fy = (dy / distance) * force;
                             
@@ -1608,9 +1621,9 @@ class DiffManager {
                 node.x += node.vx;
                 node.y += node.vy;
                 
-                // Keep within bounds
-                node.x = Math.max(50, Math.min(750, node.x));
-                node.y = Math.max(50, Math.min(550, node.y));
+                // Keep within scaled bounds
+                node.x = Math.max(50, Math.min(containerWidth - 50, node.x));
+                node.y = Math.max(50, Math.min(containerHeight - 50, node.y));
             });
         }
 
@@ -1643,26 +1656,27 @@ class DiffManager {
         return artistMatch ? artistMatch[1].trim() : 'Unknown Artist';
     }
 
-    classifyArtisticMovement(artReference) {
-        const reference = artReference.toLowerCase();
-        
-        if (reference.includes('monet') || reference.includes('renoir') || reference.includes('degas')) {
-            return 'impressionism';
-        } else if (reference.includes('van gogh') || reference.includes('munch') || reference.includes('klimt')) {
-            return 'expressionism';
-        } else if (reference.includes('picasso') || reference.includes('braque')) {
-            return 'cubism';
-        } else if (reference.includes('pollock') || reference.includes('rothko') || reference.includes('kandinsky')) {
-            return 'abstract';
-        } else if (reference.includes('dali') || reference.includes('magritte')) {
-            return 'surrealism';
-        } else if (reference.includes('mondrian') || reference.includes('malevich')) {
-            return 'minimalism';
-        } else if (reference.includes('warhol') || reference.includes('lichtenstein')) {
-            return 'modern';
-        } else {
-            return 'contemporary';
+    async classifyArtisticMovement(artReference) {
+        // Use AI for movement classification
+        try {
+            const response = await fetch('/api/ai/classify-art-movement', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ artReference })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                return data.movement || 'contemporary';
+            }
+        } catch (error) {
+            console.log('AI movement classification failed:', error);
         }
+
+        // Simple fallback - just return contemporary if AI fails
+        return 'contemporary';
     }
 
     drawDivConnections() {
@@ -1788,6 +1802,9 @@ class DiffManager {
             font-family: 'Bianzhidai', monospace;
             font-size: 12px;
             line-height: 1.4;
+            max-width: 200px;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         `;
         layoutInfo.appendChild(layoutDesc);
         
@@ -1933,10 +1950,10 @@ class DiffManager {
 
     getLayoutDescription() {
         const descriptions = {
-            'chronological': 'Diffs arranged by creation time, showing the evolution of your shaders over time.',
-            'artistic_movement': 'Diffs grouped by artistic movement, revealing patterns in your visual style choices.',
-            'artist_centric': 'Diffs organized by referenced artists, showing your artistic influences.',
-            'style_network': 'Force-directed layout showing relationships between different visual styles and movements.'
+            'chronological': 'Diffs arranged by creation time.',
+            'artistic_movement': 'Diffs grouped by artistic movement.',
+            'artist_centric': 'Diffs organized by referenced artists.',
+            'style_network': 'Force-directed layout showing style relationships.'
         };
         return descriptions[this.currentLayout] || 'Custom layout';
     }
@@ -1979,22 +1996,31 @@ class DiffManager {
                 // Regular diff node
                 // Node name
                 const nameDiv = document.createElement('div');
-                nameDiv.textContent = node.nodeId;
-                nameDiv.style.cssText = `font-weight: bold; color: #ffffff; font-family: 'Bianzhidai', monospace; font-size: 12px; margin-bottom: 4px;`;
+                const nodeName = node.nodeId;
+                // Truncate node name to prevent overflow
+                const truncatedNodeName = nodeName.length > 20 ? nodeName.substring(0, 20) + '...' : nodeName;
+                nameDiv.textContent = truncatedNodeName;
+                nameDiv.style.cssText = `font-weight: bold; color: #ffffff; font-family: 'Bianzhidai', monospace; font-size: 12px; margin-bottom: 4px; max-width: 100%; word-wrap: break-word; overflow-wrap: break-word;`;
                 nodeDiv.appendChild(nameDiv);
 
                 // Art reference
                 if (node.artReference) {
                     const artRefDiv = document.createElement('div');
-                    artRefDiv.textContent = node.artReference;
-                    artRefDiv.style.cssText = `color: #ffffff; font-family: 'Bianzhidai', monospace; font-size: 9px; text-align: center; line-height: 1.2; font-style: italic; margin-bottom: 2px;`;
+                    const artRef = node.artReference;
+                    // Truncate art reference to prevent overflow
+                    const truncatedArtRef = artRef.length > 25 ? artRef.substring(0, 25) + '...' : artRef;
+                    artRefDiv.textContent = truncatedArtRef;
+                    artRefDiv.style.cssText = `color: #ffffff; font-family: 'Bianzhidai', monospace; font-size: 9px; text-align: center; line-height: 1.2; font-style: italic; margin-bottom: 2px; max-width: 100%; word-wrap: break-word; overflow-wrap: break-word;`;
                     nodeDiv.appendChild(artRefDiv);
                 }
 
                 // Description (single short sentence)
                 const descDiv = document.createElement('div');
-                descDiv.textContent = node.diff.summary || 'Shader modification';
-                descDiv.style.cssText = `color: #cccccc; font-family: 'Bianzhidai', monospace; font-size: 10px; text-align: center; line-height: 1.2;`;
+                const summary = node.diff.summary || 'Shader modification';
+                // Truncate description to prevent overflow
+                const truncatedSummary = summary.length > 30 ? summary.substring(0, 30) + '...' : summary;
+                descDiv.textContent = truncatedSummary;
+                descDiv.style.cssText = `color: #cccccc; font-family: 'Bianzhidai', monospace; font-size: 10px; text-align: center; line-height: 1.2; max-width: 100%; word-wrap: break-word; overflow-wrap: break-word;`;
                 nodeDiv.appendChild(descDiv);
 
                 // Timestamp
@@ -2136,7 +2162,7 @@ class DiffManager {
 
             // Add click handler (only for non-header nodes)
             if (!node.isHeader) {
-                nodeDiv.addEventListener('click', (e) => {
+                nodeDiv.addEventListener('click', async (e) => {
                     console.log('=== CLICK EVENT TRIGGERED ===');
                     console.log('Event target:', e.target);
                     console.log('Event currentTarget:', e.currentTarget);
@@ -2150,7 +2176,7 @@ class DiffManager {
                     this.loadDiffIntoNode(node.diff);
                     this.selectedNode = node;
                     this.showDiffDetails(node);
-                    this.renderDivs(); // Re-render to update selected/loaded state
+                    await this.renderDivs(); // Re-render to update selected/loaded state
                 });
 
                 // Add hover handlers

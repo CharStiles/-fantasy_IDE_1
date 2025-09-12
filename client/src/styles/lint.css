@@ -1,5 +1,7 @@
 /* CodeMirror, copyright (c) by Marijn Haverbeke and others
    Distributed under an MIT license: https://codemirror.net/LICENSE */
+   
+/* GLSL Linting Styles - Used for both CodeMirror 5 and 6 */
 
 /* The lint marker gutter */
 .CodeMirror-lint-markers {
@@ -18,7 +20,7 @@
   position: fixed;
   white-space: pre;
   white-space: pre-wrap;
-  z-index: 100;
+  z-index: 10000;
   max-width: 600px;
   opacity: 0;
   transition: opacity .4s;

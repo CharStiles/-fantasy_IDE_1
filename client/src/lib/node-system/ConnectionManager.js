@@ -382,7 +382,7 @@ class ConnectionManager {
         this.svg.style.top = '0px';
         this.svg.style.left = '0px';
         
-        console.log('SVG updated - size:', containerRect.width, 'x', containerRect.height);
+     //   console.log('SVG updated - size:', containerRect.width, 'x', containerRect.height);
     }
 
     // Public method to manually trigger SVG update

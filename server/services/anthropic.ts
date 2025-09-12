@@ -213,3 +213,94 @@ export async function sendImageMessage(
     }
   }
 }
+
+/**
+ * Extracts the artist name from an art reference
+ * 
+ * @param {string} artReference - The art reference (e.g., "Starry Night by Van Gogh")
+ * @returns {string} - The artist name (e.g., "Van Gogh")
+ */
+function extractArtistName(artReference: string): string {
+  // Try to extract artist name after "by"
+  const byMatch = artReference.match(/by\s+([^,]+)/i);
+  if (byMatch) {
+    return byMatch[1].trim();
+  }
+  
+  // If no "by" found, try to extract from the end of the string
+  const parts = artReference.split(' ');
+  if (parts.length >= 2) {
+    // Take the last 1-3 words as potential artist name
+    const potentialArtist = parts.slice(-2).join(' ');
+    return potentialArtist;
+  }
+  
+  return 'Unknown Artist';
+}
+
+/**
+ * Gets the artistic movement for a specific artist using Anthropic's Claude API
+ * 
+ * @param {string} artistName - The artist name (e.g., "Van Gogh")
+ * @param {string} model - The model to use (default: "claude-opus-4-1-20250805")
+ * @returns {Promise<string>} - The artistic movement classification
+ */
+export async function getArtistMovement(
+  artistName: string,
+  model: string = "claude-opus-4-1-20250805"
+): Promise<string> {
+  // Check if API key is available
+  if (!isAnthropicAvailable()) {
+    throw new Error('Anthropic API key not configured. Please add ANTHROPIC_API_KEY to your environment variables.');
+  }
+
+  if (!anthropic) {
+    throw new Error('Anthropic client not initialized. Please add ANTHROPIC_API_KEY to your environment variables.');
+  }
+
+  console.log("Getting movement for artist:", artistName);
+  
+  const prompt = `What artistic movement is the artist "${artistName}" most associated with?
+
+Choose from these movements: impressionism, expressionism, cubism, abstract, surrealism, minimalism, modern, contemporary, baroque, renaissance, romanticism, post-impressionism, fauvism, dada, pop art, conceptual art, or other.
+
+Respond with just the movement name, like "impressionism" or "contemporary".`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: model,
+      max_tokens: 50,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    
+    const movement = response.content[0]?.text?.trim().toLowerCase() || 'contemporary';
+    console.log(`Artist "${artistName}" classified as: ${movement}`);
+    
+    return movement;
+  } catch (error) {
+    console.error('Error getting artist movement:', error);
+    throw error;
+  }
+}
+
+/**
+ * Classifies an art reference into an artistic movement using Anthropic's Claude API
+ * First extracts the artist name, then queries for their specific movement
+ * 
+ * @param {string} artReference - The art reference (e.g., "Starry Night by Van Gogh")
+ * @param {string} model - The model to use (default: "claude-opus-4-1-20250805")
+ * @returns {Promise<string>} - The artistic movement classification
+ */
+export async function classifyArtMovement(
+  artReference: string,
+  model: string = "claude-opus-4-1-20250805"
+): Promise<string> {
+  console.log("Classifying art movement for:", artReference);
+  
+  // First extract the artist name
+  const artistName = extractArtistName(artReference);
+  console.log("Extracted artist name:", artistName);
+  
+  // Then get the movement for that specific artist
+  return await getArtistMovement(artistName, model);
+}

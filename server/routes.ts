@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { nodeSchema } from "@shared/schema";
 import { diffService } from "./services/diffService";
 import { isOpenAIAvailable } from "./services/gpt";
-import { sendTextMessage, sendImageMessage, isAnthropicAvailable } from "./services/anthropic";
+import { sendTextMessage, sendImageMessage, isAnthropicAvailable, classifyArtMovement, getArtistMovement } from "./services/anthropic";
 import { artSearchService } from "./services/artSearch";
 import { googleSearchService } from "./services/googleSearch";
 
@@ -63,6 +63,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         openai: { available: false, error: "Failed to check OpenAI status" },
         anthropic: { available: false, error: "Failed to check Anthropic status" }
+      });
+    }
+  });
+
+  // AI-powered art movement classification endpoint using Anthropic
+  app.post("/api/ai/classify-art-movement", async (req, res) => {
+    try {
+      const { artReference } = req.body;
+      
+      if (!artReference) {
+        return res.status(400).json({ error: "Art reference is required" });
+      }
+
+      if (!isAnthropicAvailable()) {
+        return res.status(503).json({ 
+          error: "Anthropic API key not configured. Please add ANTHROPIC_API_KEY to your environment variables." 
+        });
+      }
+
+      const movement = await classifyArtMovement(artReference);
+      
+      res.json({ movement });
+    } catch (error) {
+      console.error('Error classifying art movement:', error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to classify art movement" 
+      });
+    }
+  });
+
+  // Direct artist movement classification endpoint
+  app.post("/api/ai/artist-movement", async (req, res) => {
+    try {
+      const { artistName } = req.body;
+      
+      if (!artistName) {
+        return res.status(400).json({ error: "Artist name is required" });
+      }
+
+      if (!isAnthropicAvailable()) {
+        return res.status(503).json({ 
+          error: "Anthropic API key not configured. Please add ANTHROPIC_API_KEY to your environment variables." 
+        });
+      }
+
+      const movement = await getArtistMovement(artistName);
+      
+      res.json({ artistName, movement });
+    } catch (error) {
+      console.error('Error getting artist movement:', error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to get artist movement" 
       });
     }
   });

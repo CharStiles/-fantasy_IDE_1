@@ -5,6 +5,7 @@ class ShaderManager {
         this.nodeSystem = nodeSystem;
         //random shader
         this.defaultShaderCode = fragmentShaders[Math.floor(Math.random() * fragmentShaders.length)];
+        this.lastCompilationErrors = []; // Store compilation errors for linting
         this.initAudio();
         
         // Add mouse tracking with initial values
@@ -341,6 +342,9 @@ class ShaderManager {
     }
 
     createShaderProgram(gl, shaderCode) {
+        // Clear previous compilation errors
+        this.lastCompilationErrors = [];
+        
         // Create vertex shader
         const vertexShader = gl.createShader(gl.VERTEX_SHADER);
         gl.shaderSource(vertexShader, `
@@ -362,7 +366,30 @@ class ShaderManager {
         gl.compileShader(fragmentShader);
 
         if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
-            console.error('Fragment shader compilation failed:', gl.getShaderInfoLog(fragmentShader));
+            const infoLog = gl.getShaderInfoLog(fragmentShader);
+            console.error('Fragment shader compilation failed:', infoLog);
+            
+            // Parse and save compilation errors for linting
+            const errors = infoLog.split(/\r|\n/);
+            for (let error of errors) {
+                if (error.trim()) {
+                    const splitResult = error.split(":");
+                    if (splitResult.length >= 5) {
+                        this.lastCompilationErrors.push({
+                            message: (splitResult[3] + splitResult[4]).trim(),
+                            character: parseInt(splitResult[1]) || 0,
+                            line: parseInt(splitResult[2]) || 0
+                        });
+                    } else {
+                        // Fallback for errors that don't follow the standard format
+                        this.lastCompilationErrors.push({
+                            message: error.trim(),
+                            character: 0,
+                            line: 1
+                        });
+                    }
+                }
+            }
             return null;
         }
 
@@ -880,6 +907,7 @@ class ShaderManager {
             }
         `;
     }
+
 }
 
 // export default ShaderManager; 

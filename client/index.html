@@ -21,6 +21,44 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/lint/javascript-lint.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jshint/2.13.5/jshint.min.js"></script>
     
+    <!-- GLSL Linting -->
+    <script>
+      function validator(text, options) {
+        var result = [];
+        // Use the ShaderManager's last compilation errors if available
+        if (window.nodeSystem && window.nodeSystem.shaderManager) {
+          var errors = window.nodeSystem.shaderManager.lastCompilationErrors || [];
+          if (errors) parseErrors(errors, result);
+        }
+        return result;
+      }
+      
+      function parseErrors(errors, output) {
+        for (var i = 0; i < errors.length; i++) {
+          var error = errors[i];
+          if (error) {
+            if (Number(error.line) <= 0) {
+              console.warn("Cannot display error (invalid line " + error.line + ")", error);
+              continue;
+            }
+
+            var start = error.character - 1, end = start + 1;
+            var hint = {
+              message: error.message,
+              severity: "error",
+              from: CodeMirror.Pos(Number(error.line) - 1, start),
+              to: CodeMirror.Pos(Number(error.line) - 1, end)
+            };
+            output.push(hint);
+          }
+        }
+      }
+      
+      // Register the GLSL linter
+      CodeMirror.registerHelper("lint", "x-shader/x-fragment", validator);
+      CodeMirror.registerHelper("lint", "x-shader/x-vertex", validator);
+    </script>
+    
     <!-- Socket.IO -->
     <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
   </head>
