@@ -16,7 +16,7 @@ async function testArtSearch() {
         console.log(`Testing: "${artReference}"`);
         
         try {
-            const response = await fetch('http://localhost:3000/api/artsearch/find-artwork', {
+            const response = await fetch('http://localhost:5000/api/artsearch/find-artwork', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

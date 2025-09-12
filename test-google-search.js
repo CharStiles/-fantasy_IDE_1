@@ -3,7 +3,7 @@
 
 const fetch = require('node-fetch');
 
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = 'http://localhost:5000/api';
 
 async function testGoogleSearchAPI() {
     console.log('🔍 Testing Google Search API Integration...\n');
