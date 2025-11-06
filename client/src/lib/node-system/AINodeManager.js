@@ -245,6 +245,7 @@ class AINodeManager {
                 <div class="header-buttons">
                     <button class="expand-button">Edit</button>
                     <button class="mode-toggle-button" title="Toggle between modes">💬</button>
+                    <button class="close-button" title="Delete tile">×</button>
                 </div>
             </div>
             <div class="node-content">

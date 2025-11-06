@@ -114,7 +114,6 @@ class NodeSystem {
                 const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
                 this.createNode('ai', randomX, randomY);
             }},
-            { text: 'Random Background', onClick: () => this.setRandomNodeAsBackground() },
             { text: 'Toggle View', onClick: () => this.toggleView() }
         ];
 
@@ -229,6 +228,7 @@ class NodeSystem {
                     <div class="header-buttons">
                         <button class="expand-button">Edit</button>
                         ${type === 'webcam' ? '<button class="device-select-button">📹</button>' : ''}
+                        <button class="close-button" title="Delete tile">×</button>
                     </div>
                 </div>
                 <div class="node-content">
@@ -251,6 +251,7 @@ class NodeSystem {
                 <span>${type}</span>
                 <div class="header-buttons">
                     <button class="expand-button">Edit</button>
+                    <button class="close-button" title="Delete tile">×</button>
                 </div>
             </div>
             <div class="node-content">

@@ -17,6 +17,13 @@ export class NodeEventHandler {
     initializeEventListeners() {
         // Node dragging
         this.nodeSystem.container.addEventListener('mousedown', (e) => {
+            // Don't start drag if clicking buttons
+            if (e.target.closest('.close-button') || 
+                e.target.closest('.expand-button') || 
+                e.target.closest('.header-buttons')) {
+                return;
+            }
+            
             // Only start dragging if clicking the header
             const nodeHeader = e.target.closest('.node-header');
             const node = e.target.closest('.node');
@@ -33,6 +40,9 @@ export class NodeEventHandler {
                 x: e.clientX - rect.left,
                 y: e.clientY - rect.top
             };
+            
+            // Disable transitions during drag for immediate response
+            node.style.transition = 'none';
         });
 
         document.addEventListener('mousemove', (e) => {
@@ -45,6 +55,9 @@ export class NodeEventHandler {
 
         document.addEventListener('mouseup', () => {
             if (this.draggedNode) {
+                // Re-enable transitions after drag
+                this.draggedNode.style.transition = '';
+                
                 // Final connection update
                 if (this.nodeSystem.connectionManager) {
                     this.nodeSystem.connectionManager.updateConnections();
@@ -76,6 +89,9 @@ export class NodeEventHandler {
                 this.cancelConnectionDrag();
             }
         });
+        
+        // Setup editor and close button events
+        this.setupEditorEvents();
     }
 
     updateNodePosition(x, y) {
@@ -224,6 +240,26 @@ export class NodeEventHandler {
                 if (node) {
                     const type = node.getAttribute('data-type');
                     this.nodeSystem.editorManager.toggleEditor(node.id, type);
+                }
+                return;
+            }
+            
+            // Handle close button click
+            const closeButton = e.target.closest('.close-button');
+            if (closeButton) {
+                e.stopPropagation(); // Prevent triggering drag
+                e.preventDefault(); // Prevent any default behavior
+                const node = closeButton.closest('.node');
+                if (node) {
+                    const nodeId = node.id;
+                    console.log('Closing node:', nodeId);
+                    // Close any open editor for this node first
+                    if (this.nodeSystem.editorManager._activeEditor && 
+                        this.nodeSystem.editorManager._activeEditor.nodeId === nodeId) {
+                        this.nodeSystem.editorManager.closeEditor(nodeId);
+                    }
+                    // Delete the node (this will also update the toggle view)
+                    this.nodeSystem.deleteNode(nodeId);
                 }
             }
         });

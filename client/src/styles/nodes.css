@@ -4,12 +4,16 @@
 }
 
 #node-container {
-  position: relative;
-  width: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
   height: 100vh;
   background-color: #121212;
   overflow: hidden;
   font-family: 'Bianzhidai', monospace;
+  margin: 0;
+  padding: 0;
 }
 
 #editor {
@@ -232,7 +236,6 @@
 }
 
 .node {
-  transition: all 0.3s ease-out;
   z-index: 1;
   position: absolute;
   background: #1e1e1e;
@@ -370,6 +373,34 @@
 .expand-button:hover {
   background: #ff69b4;
   color: #1e1e1e;
+}
+
+.close-button {
+  background: #1e1e1e;
+  border: 1px solid #ff69b4;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: 'Bianzhidai', monospace;
+  font-size: 16px;
+  font-weight: bold;
+  z-index: 102;
+  color: #ffffff;
+  line-height: 1;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 5px;
+  pointer-events: auto;
+  position: relative;
+}
+
+.close-button:hover {
+  background: #ff4444;
+  border-color: #ff4444;
+  color: #ffffff;
 }
 
 .header-buttons {

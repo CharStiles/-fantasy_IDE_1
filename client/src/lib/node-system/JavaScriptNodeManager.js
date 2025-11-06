@@ -155,6 +155,7 @@ updateLoop();`;
                     <button class="expand-button">Edit</button>
                     <button class="run-button" style="margin-left: 5px;">▶ Run</button>
                     <button class="template-button" style="margin-left: 5px;">templates</button>
+                    <button class="close-button" title="Delete tile">×</button>
                 </div>
             </div>
             <div class="node-content">

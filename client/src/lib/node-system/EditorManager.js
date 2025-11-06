@@ -396,10 +396,11 @@ class EditorManager {
                 editorContainer.style.left = '50%';
                 editorContainer.style.transform = 'translate(-50%, -50%)';
                 editorContainer.style.zIndex = '1000';
-                editorContainer.style.backgroundColor = '#1e1e1e';
+                editorContainer.style.backgroundColor = 'rgba(30, 30, 30, 0.2)';
                 editorContainer.style.padding = '20px';
                 editorContainer.style.borderRadius = '5px';
                 editorContainer.style.boxShadow = '0 0 10px rgba(0,0,0,0.7)';
+                editorContainer.style.backdropFilter = 'blur(10px)';
 
                 // Add toolbar with appropriate buttons
                 const toolbar = document.createElement('div');
