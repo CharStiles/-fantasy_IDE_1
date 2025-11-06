@@ -164,7 +164,7 @@ class AINodeManager {
             
             // Only update code if in code replacement mode
             if (nodeData.mode === 'code' && nodeData.connectedNodeId) {
-                console.log('AINodeManager: Updating code for connected node:', nodeData.connectedNodeId);
+               // console.log('AINodeManager: Updating code for connected node:', nodeData.connectedNodeId);
                 
                 // Update the node's code in the system
                 const targetNodeData = this.nodeSystem.nodes.get(nodeData.connectedNodeId);

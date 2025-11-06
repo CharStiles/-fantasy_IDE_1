@@ -684,7 +684,6 @@ class EditorManager {
     }
 
     updateNodeCode(nodeId, code) {
-        console.log('EditorManager: Updating code for node:', nodeId);
         const nodeData = this.nodeSystem.nodes.get(nodeId);
         if (!nodeData) {
             console.error('EditorManager: Node not found:', nodeId);

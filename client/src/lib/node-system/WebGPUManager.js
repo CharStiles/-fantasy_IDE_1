@@ -280,8 +280,8 @@ class WebGPUManager {
             nodeData.data.pipeline = pipeline;
             nodeData.code = code;
 
-            // Save diff if code actually changed
-            if (oldCode !== code && this.nodeSystem.diffManager) {
+            // Save diff if code actually changed and diff functionality is enabled
+            if (oldCode !== code && this.nodeSystem.diffManager && this.nodeSystem.diffManager.isDiffEnabled()) {
                 this.nodeSystem.diffManager.saveDiff(nodeId, oldCode, code);
             }
 

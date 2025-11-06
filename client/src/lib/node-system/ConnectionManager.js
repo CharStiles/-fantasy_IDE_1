@@ -122,7 +122,7 @@ class ConnectionManager {
             this.nodeSystem.shaderManager.updateShaderConnection(fromNode, toNode);
         }
         if (fromNodeData.type === 'hdmi' && toNodeData.type === 'webgl') {
-            console.log('Setting up webcam to WebGL connection');
+            console.log('Setting up HDMI to WebGL connection');
             this.nodeSystem.shaderManager.updateShaderConnection(fromNode, toNode);
         }
         // Draw the connection
@@ -177,7 +177,6 @@ class ConnectionManager {
     }
 
     updateConnections() {
-        console.log('Updating all connections');
         // Clear existing paths
         while (this.svg.firstChild) {
             this.svg.removeChild(this.svg.firstChild);

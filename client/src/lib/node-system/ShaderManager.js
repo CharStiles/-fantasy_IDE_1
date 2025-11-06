@@ -263,6 +263,54 @@ class ShaderManager {
                 gl.uniform4f(nodeData.uniforms.u_spectrum, bass, lowMid, highMid, treble);
             }
 
+            // Update webcam texture if connected
+            if (nodeData.data.webcamLocation) {
+                // Find the webcam node that's connected to this WebGL node
+                const webcamConnections = Array.from(this.nodeSystem.connectionManager.connections.values())
+                    .filter(conn => conn.to === node.id);
+                
+                for (const connection of webcamConnections) {
+                    const webcamNode = document.getElementById(connection.from);
+                    if (webcamNode) {
+                        const webcamNodeData = this.nodeSystem.nodes.get(connection.from);
+                        if (webcamNodeData && webcamNodeData.type === 'webcam') {
+                            const video = webcamNode.querySelector('video');
+                            if (video && video.readyState >= video.HAVE_CURRENT_DATA) {
+                                gl.activeTexture(gl.TEXTURE2);
+                                gl.bindTexture(gl.TEXTURE_2D, nodeData.data.webcamTexture || gl.createTexture());
+                                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+                                gl.uniform1i(nodeData.data.webcamLocation, 2);
+                                break; // Only handle the first webcam connection
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Update HDMI texture if connected
+            if (nodeData.data.hdmiTexture && nodeData.data.hdmiLocation) {
+                // Find the HDMI node that's connected to this WebGL node
+                const hdmiConnections = Array.from(this.nodeSystem.connectionManager.connections.values())
+                    .filter(conn => conn.to === node.id);
+                
+                for (const connection of hdmiConnections) {
+                    const hdmiNode = document.getElementById(connection.from);
+                    if (hdmiNode) {
+                        const hdmiNodeData = this.nodeSystem.nodes.get(connection.from);
+                        if (hdmiNodeData && hdmiNodeData.type === 'hdmi') {
+                            const video = hdmiNode.querySelector('video');
+                            if (video && video.readyState >= video.HAVE_CURRENT_DATA) {
+                                gl.activeTexture(gl.TEXTURE3);
+                                gl.bindTexture(gl.TEXTURE_2D, nodeData.data.hdmiTexture);
+                                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+                                gl.uniform1i(nodeData.data.hdmiLocation, 3);
+                                break; // Only handle the first HDMI connection
+                            }
+                        }
+                    }
+                }
+            }
+
             // Draw to framebuffer
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
@@ -283,7 +331,6 @@ class ShaderManager {
             connections.forEach(connection => {
                 const targetNode = document.getElementById(connection.to);
                 if (targetNode) {
-                    console.log('Updating connected node:', connection.to);
                     this.updateCheckboxGrid(gl, targetNode);
                 }
             });
@@ -446,6 +493,7 @@ class ShaderManager {
         const mouseLocation = gl.getUniformLocation(newProgram, 'u_mouse');
         const prevFrameLocation = gl.getUniformLocation(newProgram, 'u_prevFrame');
         const webcamLocation = gl.getUniformLocation(newProgram, 'u_webcam');
+        const hdmiLocation = gl.getUniformLocation(newProgram, 'u_hdmi');
 
         // Only after successful creation, update the node data
         const oldProgram = nodeData.data.program;
@@ -461,6 +509,13 @@ class ShaderManager {
             gl.useProgram(newProgram);
             gl.uniform1i(webcamLocation, 2);
             nodeData.data.webcamLocation = webcamLocation;
+        }
+        
+        // Preserve HDMI connection if it exists
+        if (hdmiLocation !== null) {
+            gl.useProgram(newProgram);
+            gl.uniform1i(hdmiLocation, 3);
+            nodeData.data.hdmiLocation = hdmiLocation;
         }
         
         nodeData.code = code;
@@ -546,8 +601,8 @@ class ShaderManager {
             }
         }
 
-        // Save diff if code actually changed
-        if (oldCode !== code && this.nodeSystem.diffManager) {
+        // Save diff if code actually changed and diff functionality is enabled
+        if (oldCode !== code && this.nodeSystem.diffManager && this.nodeSystem.diffManager.isDiffEnabled()) {
             this.nodeSystem.diffManager.saveDiff(nodeId, oldCode, code);
         }
 
@@ -574,7 +629,7 @@ class ShaderManager {
         document.getElementById('toolbar').appendChild(hdmiButton);
     }
 
-    updateShaderConnection(fromNode, toNode) {
+    async updateShaderConnection(fromNode, toNode) {
         console.log('Setting up shader connection between:', fromNode.id, 'and', toNode.id);
         
         const fromNodeData = this.nodeSystem.nodes.get(fromNode.id);
@@ -599,6 +654,9 @@ class ShaderManager {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            
+            // Store texture reference in node data for later use
+            toNodeData.data.webcamTexture = texture;
 
             // Get the current shader code
             let shaderCode = toNodeData.code;
@@ -625,22 +683,18 @@ class ShaderManager {
             console.log('Webcam uniform location:', webcamLocation);
             gl.uniform1i(webcamLocation, 2);  // Use texture unit 2
 
-            // Update texture in render loop
-            const updateTexture = () => {
-                if (video.readyState >= video.HAVE_CURRENT_DATA) {
-                    console.log('Updating texture with video frame');
-                    gl.activeTexture(gl.TEXTURE2);
-                    gl.bindTexture(gl.TEXTURE_2D, texture);
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-                }
-                requestAnimationFrame(updateTexture);
-            };
-            updateTexture();
+            // Texture updates are now handled in the main WebGL render loop
 
             console.log('Webcam setup complete');
         } else if (fromNodeData.type === 'hdmi' && toNodeData.type === 'webgl') {
             const gl = toNodeData.data.gl;
-            const video = fromNodeData.data.video;
+            // For HDMI nodes, get video element directly from DOM (same as webcam)
+            const video = fromNode.querySelector('video');
+            
+            if (!video) {
+                console.error('No video element found in HDMI node');
+                return;
+            }
             
             console.log('Setting up HDMI connection');
             console.log('Video element:', video);
@@ -648,48 +702,45 @@ class ShaderManager {
 
             // Create and setup texture for HDMI
             const texture = gl.createTexture();
-            gl.activeTexture(gl.TEXTURE2);
+            gl.activeTexture(gl.TEXTURE3);  // Use texture unit 3 for HDMI (webcam uses 2)
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            
+            // Store texture reference in node data for later use
+            toNodeData.data.hdmiTexture = texture;
 
             // Get the current shader code
             let shaderCode = toNodeData.code;
-            if (!shaderCode.includes('uniform sampler2D u_webcam;')) {
+            if (!shaderCode.includes('uniform sampler2D u_hdmi;')) {
                 const uniformIndex = shaderCode.lastIndexOf('uniform');
                 const insertPosition = uniformIndex !== -1 ? 
                     shaderCode.indexOf(';', uniformIndex) + 1 : 
                     shaderCode.indexOf('void main()');
                 
-                const webcamUniform = '\nuniform sampler2D u_webcam;\n// vec4 s = texture2D(u_webcam, normCoord);';
+                const hdmiUniform = '\nuniform sampler2D u_hdmi;\n//vec4 s = texture2D(u_hdmi,  vec2(gl_FragCoord.x/u_resolution.x  * (u_resolution.y/u_resolution.x) ,1.-(gl_FragCoord.y/u_resolution.y)));';
                 shaderCode = shaderCode.slice(0, insertPosition) + 
-                           webcamUniform +
+                           hdmiUniform +
                            shaderCode.slice(insertPosition);
             }
             
-            this.updateShader(toNode.id, shaderCode);
+            await this.updateShader(toNode.id, shaderCode);
 
-            // Get the new program
+            // Get the updated program and uniform location from node data
             const program = toNodeData.data.program;
+            const hdmiLocation = toNodeData.data.hdmiLocation;
+            
+            if (!program || !hdmiLocation) {
+                console.error('Failed to get program or HDMI uniform location');
+                return;
+            }
+            
+            console.log('HDMI uniform location:', hdmiLocation);
             gl.useProgram(program);
+            gl.uniform1i(hdmiLocation, 3);  // Use texture unit 3
 
-            // Get uniform location
-            const webcamLocation = gl.getUniformLocation(program, 'u_webcam');
-            console.log('HDMI uniform location:', webcamLocation);
-            gl.uniform1i(webcamLocation, 2);  // Use texture unit 2
-
-            // Update texture in render loop
-            const updateTexture = () => {
-                if (video.readyState >= video.HAVE_CURRENT_DATA) {
-                    console.log('Updating texture with HDMI frame');
-                    gl.activeTexture(gl.TEXTURE2);
-                    gl.bindTexture(gl.TEXTURE_2D, texture);
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-                }
-                requestAnimationFrame(updateTexture);
-            };
-            updateTexture();
+            // Texture updates are now handled in the main WebGL render loop
 
             console.log('HDMI setup complete');
         }

@@ -561,6 +561,7 @@ class DiffManager {
         this.currentLayout = 'chronological'; // 'chronological', 'artistic_movement', 'artist_centric', 'style_network'
         this.lastDiffTime = 0; // Track last diff creation time
         this.diffCooldownMs = 60000; // 1 minute cooldown between diffs
+        this.diffEnabled = false; // Diff functionality is off by default
         this.setupCleanup();
         
         // Add debugging methods to window for easy testing
@@ -568,6 +569,8 @@ class DiffManager {
             window.diffManager = this;
             window.resetDiffCooldown = () => this.resetCooldown();
             window.getDiffCooldownTime = () => this.getRemainingCooldownTime();
+            window.toggleDiffEnabled = () => this.toggleDiffEnabled();
+            window.isDiffEnabled = () => this.isDiffEnabled();
         }
     }
 
@@ -590,8 +593,26 @@ class DiffManager {
         console.log('Diff cooldown reset - you can now create diffs immediately');
     }
 
+    // Toggle diff functionality on/off
+    toggleDiffEnabled() {
+        this.diffEnabled = !this.diffEnabled;
+        console.log(`Diff functionality ${this.diffEnabled ? 'enabled' : 'disabled'}`);
+        return this.diffEnabled;
+    }
+
+    // Check if diff functionality is enabled
+    isDiffEnabled() {
+        return this.diffEnabled;
+    }
+
     async saveDiff(nodeId, oldCode, newCode) {
         try {
+            // Check if diff functionality is enabled
+            if (!this.diffEnabled) {
+                console.log('🚫 Diff functionality is disabled. Skipping diff creation.');
+                return;
+            }
+
             // Rate limiting: Check if enough time has passed since last diff
             // This prevents excessive API calls to OpenAI, Anthropic, and ArtSearch
             const now = Date.now();
@@ -1097,6 +1118,34 @@ class DiffManager {
             await this.renderDivs(); // Re-render with new layout
         });
 
+        // Diff toggle button
+        const diffToggleButton = document.createElement('button');
+        diffToggleButton.textContent = this.diffEnabled ? '🔴 Disable Diffs' : '🟢 Enable Diffs';
+        diffToggleButton.style.cssText = `
+            padding: 5px 12px;
+            background-color: ${this.diffEnabled ? 'rgba(255, 105, 180, 0.2)' : 'rgba(68, 68, 68, 0.2)'};
+            color: white;
+            border: 1px solid #ff69b4;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: 'Bianzhidai', monospace;
+            font-size: 12px;
+            transition: all 0.2s ease;
+        `;
+        diffToggleButton.addEventListener('mouseenter', () => {
+            diffToggleButton.style.backgroundColor = 'rgba(255, 105, 180, 0.2)';
+            diffToggleButton.style.color = '#1e1e1e';
+        });
+        diffToggleButton.addEventListener('mouseleave', () => {
+            diffToggleButton.style.backgroundColor = this.diffEnabled ? 'rgba(255, 105, 180, 0.2)' : 'rgba(68, 68, 68, 0.2)';
+            diffToggleButton.style.color = 'white';
+        });
+        diffToggleButton.addEventListener('click', () => {
+            const newState = this.toggleDiffEnabled();
+            diffToggleButton.textContent = newState ? '🔴 Disable Diffs' : '🟢 Enable Diffs';
+            diffToggleButton.style.backgroundColor = newState ? 'rgba(255, 105, 180, 0.2)' : 'rgba(68, 68, 68, 0.2)';
+        });
+
         const clearAllButton = document.createElement('button');
         clearAllButton.textContent = '🗑️ Clear All';
         clearAllButton.style.cssText = `
@@ -1149,6 +1198,7 @@ class DiffManager {
         });
 
         headerButtons.appendChild(layoutSelect);
+        headerButtons.appendChild(diffToggleButton);
         headerButtons.appendChild(clearAllButton);
         headerButtons.appendChild(closeButton);
         header.appendChild(title);
