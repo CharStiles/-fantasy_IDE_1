@@ -1107,10 +1107,10 @@ class DiffManager {
             cursor: pointer;
         `;
         layoutSelect.innerHTML = `
-            <option value="chronological">📅 Chronological</option>
-            <option value="artistic_movement">🎭 Artistic Movement</option>
-            <option value="artist_centric">👨‍🎨 Artist Centric</option>
-            <option value="style_network">🕸️ Style Network</option>
+            <option value="chronological">Chronological</option>
+            <option value="artistic_movement">Artistic Movement</option>
+            <option value="artist_centric">Artist Centric</option>
+            <option value="style_network">Style Network</option>
         `;
         layoutSelect.value = this.currentLayout;
         layoutSelect.addEventListener('change', async (e) => {
@@ -1120,7 +1120,7 @@ class DiffManager {
 
         // Diff toggle button
         const diffToggleButton = document.createElement('button');
-        diffToggleButton.textContent = this.diffEnabled ? '🔴 Disable Diffs' : '🟢 Enable Diffs';
+        diffToggleButton.textContent = this.diffEnabled ? 'Disable Diffs' : 'Enable Diffs';
         diffToggleButton.style.cssText = `
             padding: 5px 12px;
             background-color: ${this.diffEnabled ? 'rgba(255, 105, 180, 0.2)' : 'rgba(68, 68, 68, 0.2)'};
@@ -1142,12 +1142,12 @@ class DiffManager {
         });
         diffToggleButton.addEventListener('click', () => {
             const newState = this.toggleDiffEnabled();
-            diffToggleButton.textContent = newState ? '🔴 Disable Diffs' : '🟢 Enable Diffs';
+            diffToggleButton.textContent = newState ? 'Disable Diffs' : 'Enable Diffs';
             diffToggleButton.style.backgroundColor = newState ? 'rgba(255, 105, 180, 0.2)' : 'rgba(68, 68, 68, 0.2)';
         });
 
         const clearAllButton = document.createElement('button');
-        clearAllButton.textContent = '🗑️ Clear All';
+        clearAllButton.textContent = 'Clear All';
         clearAllButton.style.cssText = `
             padding: 5px 12px;
             background-color: rgba(68, 68, 68, 0.2);
@@ -1801,7 +1801,7 @@ class DiffManager {
         
         // Create legend based on current layout
         const legendTitle = document.createElement('h3');
-        legendTitle.textContent = '🎨 Art Reference Map Legend';
+        legendTitle.textContent = 'Art Reference Map Legend';
         legendTitle.style.cssText = `
             color: white;
             font-family: 'Bianzhidai', monospace;
@@ -1928,7 +1928,7 @@ class DiffManager {
             `;
             
             const icon = document.createElement('span');
-            icon.textContent = '👨‍🎨';
+            icon.textContent = 'Artist';
             icon.style.cssText = `
                 margin-right: 10px;
                 font-size: 16px;
@@ -1957,7 +1957,7 @@ class DiffManager {
             line-height: 1.4;
         `;
         legend.innerHTML = `
-            <p><strong>🕸️ Style Network Layout</strong></p>
+            <p><strong>Style Network Layout</strong></p>
             <p>Nodes are positioned using force-directed layout:</p>
             <ul style="margin-left: 20px;">
                 <li>Similar artistic movements attract</li>
@@ -1977,7 +1977,7 @@ class DiffManager {
             line-height: 1.4;
         `;
         legend.innerHTML = `
-            <p><strong>📅 Chronological Layout</strong></p>
+            <p><strong>Chronological Layout</strong></p>
             <p>Diffs are arranged by creation time:</p>
             <ul style="margin-left: 20px;">
                 <li>Left to right: Time progression</li>
@@ -1990,10 +1990,10 @@ class DiffManager {
 
     getLayoutDisplayName() {
         const names = {
-            'chronological': '📅 Chronological',
-            'artistic_movement': '🎭 Artistic Movement',
-            'artist_centric': '👨‍🎨 Artist Centric',
-            'style_network': '🕸️ Style Network'
+            'chronological': 'Chronological',
+            'artistic_movement': 'Artistic Movement',
+            'artist_centric': 'Artist Centric',
+            'style_network': 'Style Network'
         };
         return names[this.currentLayout] || this.currentLayout;
     }
@@ -2122,7 +2122,7 @@ class DiffManager {
 
                     // Loading placeholder
                     const loadingText = document.createElement('div');
-                    loadingText.textContent = '🎨';
+                    loadingText.textContent = 'Loading...';
                     loadingText.style.cssText = `
                         color: ${borderColor};
                         font-size: 20px;
@@ -2188,18 +2188,18 @@ class DiffManager {
                                     artworkContainer.appendChild(artworkImg);
                                 } else {
                                     // No artwork found, keep the emoji
-                                    loadingText.textContent = '🎨';
+                                    loadingText.textContent = 'Loading...';
                                     loadingText.title = 'No artwork found';
                                 }
                             } else {
                                 // API error, keep the emoji
-                                loadingText.textContent = '🎨';
+                                loadingText.textContent = 'Loading...';
                                 loadingText.title = 'Failed to load artwork';
                             }
                         } catch (error) {
                             console.error('Error loading artwork for node:', error);
                             // Keep the emoji on error
-                            loadingText.textContent = '🎨';
+                            loadingText.textContent = 'Loading...';
                             loadingText.title = 'Error loading artwork';
                         }
                     };

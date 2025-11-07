@@ -244,8 +244,8 @@ class AINodeManager {
                 <span>AI tile</span>
                 <div class="header-buttons">
                     <button class="expand-button">Edit</button>
-                    <button class="mode-toggle-button" title="Toggle between modes">💬</button>
-                    <button class="close-button" title="Delete tile">×</button>
+                    <button class="mode-toggle-button" title="Toggle between modes">Chat</button>
+                    <button class="close-button" title="Delete tile">X</button>
                 </div>
             </div>
             <div class="node-content">
@@ -267,7 +267,7 @@ class AINodeManager {
                         font-family: monospace;
                         user-select: text;
                     "></div>
-                    <button class="copy-button" title="Copy to clipboard">📋</button>
+                    <button class="copy-button" title="Copy to clipboard">Copy</button>
                 </div>
             </div>
             <div class="node-ports">
@@ -317,15 +317,15 @@ class AINodeManager {
             // Cycle through modes: chat -> code -> toggle view -> chat
             if (nodeData.mode === 'chat') {
                 nodeData.mode = 'code';
-                modeToggle.textContent = '✏️';
+                modeToggle.textContent = 'Edit';
                 modeToggle.title = 'Code replacement mode (click to switch to toggle view context)';
             } else if (nodeData.mode === 'code') {
                 nodeData.mode = 'toggle';
-                modeToggle.textContent = '📋';
+                modeToggle.textContent = 'Code';
                 modeToggle.title = 'Toggle view context mode (click to switch to chat)';
             } else {
                 nodeData.mode = 'chat';
-                modeToggle.textContent = '💬';
+                modeToggle.textContent = 'Chat';
                 modeToggle.title = 'Chat mode (click to switch to code replacement)';
             }
         });

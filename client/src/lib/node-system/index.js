@@ -84,35 +84,30 @@ class NodeSystem {
         };
 
         const buttons = [
-            { text: 'Add JS Tile', onClick: () => {
+            { text: 'JS Tile', onClick: () => {
                 const randomX = Math.floor(Math.random() * (window.innerWidth - 400));
                 const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
                 this.createNode('javascript', randomX, randomY);
             }},
-            { text: 'Add WebGL Tile', onClick: () => {
+            { text: 'WebGL Tile', onClick: () => {
                 const randomX = Math.floor(Math.random() * (window.innerWidth - 400));
                 const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
                 this.createNode('webgl', randomX, randomY);
             }},
-            { text: 'Add WebGPU Tile', onClick: () => {
+            { text: 'WebGPU Tile', onClick: () => {
                 const randomX = Math.floor(Math.random() * (window.innerWidth - 400));
                 const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
                 this.createNode('webgpu', randomX, randomY);
             }},
-            { text: 'Add Webcam Tile', onClick: () => {
+            { text: 'Webcam Tile', onClick: () => {
                 const randomX = Math.floor(Math.random() * (window.innerWidth - 400));
                 const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
                 this.createNode('webcam', randomX, randomY);
             }},
-            { text: 'Add HDMI Tile', onClick: () => {
+            { text: 'HDMI Tile', onClick: () => {
                 const randomX = Math.floor(Math.random() * (window.innerWidth - 400));
                 const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
                 this.createNode('hdmi', randomX, randomY);
-            }},
-            { text: 'Add AI Tile', onClick: () => {
-                const randomX = Math.floor(Math.random() * (window.innerWidth - 400));
-                const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
-                this.createNode('ai', randomX, randomY);
             }},
             { text: 'Toggle View', onClick: () => this.toggleView() }
         ];
@@ -121,7 +116,26 @@ class NodeSystem {
             const button = document.createElement('button');
             button.textContent = text;
             button.onclick = onClick;
-            Object.assign(button.style, buttonStyle);
+            
+            // Apply diff-visualization-button style to Toggle View button
+            if (text === 'Toggle View') {
+                button.className = 'diff-visualization-button';
+                button.style.cssText = `
+                    padding: 8px 16px;
+                    background-color: rgba(68, 68, 68, 0.2);
+                    color: white;
+                    border: 1px solid #ff69b4;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-family: 'Bianzhidai', monospace;
+                    font-size: 14px;
+                    margin-left: 10px;
+                    transition: all 0.3s ease;
+                    position: relative;
+                `;
+            } else {
+                Object.assign(button.style, buttonStyle);
+            }
             
             // Disable AI button if AI is not available
             if (text === 'Add AI Tile' && this.aiNodeManager && !this.aiNodeManager.isAIAvailable) {
@@ -227,8 +241,8 @@ class NodeSystem {
                     <span>${type.toUpperCase()}</span>
                     <div class="header-buttons">
                         <button class="expand-button">Edit</button>
-                        ${type === 'webcam' ? '<button class="device-select-button">📹</button>' : ''}
-                        <button class="close-button" title="Delete tile">×</button>
+                        ${type === 'webcam' ? '<button class="device-select-button">Cam</button>' : ''}
+                        <button class="close-button" title="Delete tile">X</button>
                     </div>
                 </div>
                 <div class="node-content">
@@ -251,7 +265,7 @@ class NodeSystem {
                 <span>${type}</span>
                 <div class="header-buttons">
                     <button class="expand-button">Edit</button>
-                    <button class="close-button" title="Delete tile">×</button>
+                    <button class="close-button" title="Delete tile">X</button>
                 </div>
             </div>
             <div class="node-content">

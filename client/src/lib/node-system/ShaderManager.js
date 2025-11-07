@@ -780,7 +780,7 @@ class ShaderManager {
             // Add source selection button
             const header = node.querySelector('.node-header');
             const switchButton = document.createElement('button');
-            switchButton.textContent = '📹';
+            switchButton.textContent = 'Cam';
             switchButton.className = 'switch-camera';
             switchButton.style.marginLeft = '5px';
             switchButton.onclick = () => this.switchWebcamSource(node);

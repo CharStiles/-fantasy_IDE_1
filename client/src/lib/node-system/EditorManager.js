@@ -88,7 +88,7 @@ class EditorManager {
 
         // Add close button
         const closeButton = document.createElement('button');
-        closeButton.textContent = '×';
+        closeButton.textContent = 'X';
         closeButton.style.position = 'absolute';
         closeButton.style.right = '20px';
         closeButton.style.top = '20px';
@@ -110,7 +110,7 @@ class EditorManager {
 
         // Add run button
         const runButton = document.createElement('button');
-        runButton.textContent = '▶ Run (Ctrl+Enter)';
+        runButton.textContent = 'Run (Ctrl+Enter)';
         runButton.style.position = 'absolute';
         runButton.style.right = '80px';
         runButton.style.top = '20px';
@@ -411,7 +411,7 @@ class EditorManager {
 
                 if (type === 'javascript' || nodeId === 'text-view') {
                     const runButton = document.createElement('button');
-                    runButton.textContent = '▶ Run (Ctrl+Enter)';
+                    runButton.textContent = 'Run (Ctrl+Enter)';
                     runButton.style.padding = '5px 10px';
                     runButton.style.backgroundColor = '#4CAF50';
                     runButton.style.color = 'white';
@@ -440,7 +440,7 @@ class EditorManager {
                     toolbar.appendChild(runButton);
                 } else if (type === 'webgl' || type === 'webgpu') {
                     const saveButton = document.createElement('button');
-                    saveButton.textContent = '💾 Save (Ctrl+S)';
+                    saveButton.textContent = 'Save (Ctrl+S)';
                     saveButton.style.padding = '5px 10px';
                     saveButton.style.backgroundColor = '#4CAF50';
                     saveButton.style.color = 'white';
@@ -550,7 +550,7 @@ class EditorManager {
 
                 // Add close button
                 const closeButton = document.createElement('button');
-                closeButton.textContent = '×';
+                closeButton.textContent = 'X';
                 closeButton.style.position = 'absolute';
                 closeButton.style.right = '10px';
                 closeButton.style.top = '10px';
