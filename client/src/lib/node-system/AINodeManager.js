@@ -60,10 +60,12 @@ class AINodeManager {
         console.log('AINodeManager: Attempting to connect to Socket.IO server...');
         
         // Create socket with reconnection options
-        this.socket = io('http://localhost:3000', {
+        this.socket = io({
             reconnection: true, // Enable automatic reconnection
             timeout: 5000, // Shorter timeout
-            autoConnect: true // Connect automatically
+            autoConnect: true, // Connect automatically
+            withCredentials: true,
+            transports: ['websocket', 'polling']
         });
 
         // Always try to connect

@@ -5,13 +5,13 @@ let socket: Socket | null = null;
 
 function getSocket(): Socket {
   if (!socket) {
-    socket = io('http://localhost:3000');
+    socket = io('http://localhost:5000');
   }
   return socket;
 }
 
 // API endpoints
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = 'http://localhost:5000/api';
 
 /**
  * Check if Anthropic API is available
