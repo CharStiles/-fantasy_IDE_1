@@ -29,7 +29,7 @@ class EditorManager {
         editorContainer.style.left = '0';
         editorContainer.style.width = '100%';
         editorContainer.style.height = '100%';
-        editorContainer.style.backgroundColor = 'rgba(30, 30, 30, 0.7)';
+        editorContainer.style.backgroundColor = 'rgba(30, 30, 30, 0.2)';
         editorContainer.style.zIndex = '1000';
         editorContainer.style.display = 'none';
         editorContainer.style.padding = '20px';
@@ -70,6 +70,8 @@ class EditorManager {
             matchBrackets: true,
             indentUnit: 4,
             lineWrapping: true,
+            gutters: ["CodeMirror-lint-markers"],
+            lint: true,
             extraKeys: {
                 'Ctrl-Enter': () => this.runCode(),
                 'Cmd-Enter': () => this.runCode(),
@@ -86,7 +88,7 @@ class EditorManager {
 
         // Add close button
         const closeButton = document.createElement('button');
-        closeButton.textContent = '×';
+        closeButton.textContent = 'X';
         closeButton.style.position = 'absolute';
         closeButton.style.right = '20px';
         closeButton.style.top = '20px';
@@ -108,7 +110,7 @@ class EditorManager {
 
         // Add run button
         const runButton = document.createElement('button');
-        runButton.textContent = '▶ Run (Ctrl+Enter)';
+        runButton.textContent = 'Run (Ctrl+Enter)';
         runButton.style.position = 'absolute';
         runButton.style.right = '80px';
         runButton.style.top = '20px';
@@ -357,7 +359,7 @@ class EditorManager {
                     editorContainer.style.right = '0';
                     editorContainer.style.width = '50%';
                     editorContainer.style.height = 'calc(100vh - 100px)';
-                    editorContainer.style.backgroundColor = 'rgba(30, 30, 30, 0.7)';
+                    editorContainer.style.backgroundColor = 'rgba(30, 30, 30, 0.2)';
                     editorContainer.style.zIndex = '1000';
                     editorContainer.style.padding = '20px';
                     editorContainer.style.boxSizing = 'border-box';
@@ -394,10 +396,11 @@ class EditorManager {
                 editorContainer.style.left = '50%';
                 editorContainer.style.transform = 'translate(-50%, -50%)';
                 editorContainer.style.zIndex = '1000';
-                editorContainer.style.backgroundColor = '#1e1e1e';
+                editorContainer.style.backgroundColor = 'rgba(30, 30, 30, 0.2)';
                 editorContainer.style.padding = '20px';
                 editorContainer.style.borderRadius = '5px';
-                editorContainer.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+                editorContainer.style.boxShadow = '0 0 10px rgba(0,0,0,0.7)';
+                editorContainer.style.backdropFilter = 'blur(10px)';
 
                 // Add toolbar with appropriate buttons
                 const toolbar = document.createElement('div');
@@ -408,7 +411,7 @@ class EditorManager {
 
                 if (type === 'javascript' || nodeId === 'text-view') {
                     const runButton = document.createElement('button');
-                    runButton.textContent = '▶ Run (Ctrl+Enter)';
+                    runButton.textContent = 'Run (Ctrl+Enter)';
                     runButton.style.padding = '5px 10px';
                     runButton.style.backgroundColor = '#4CAF50';
                     runButton.style.color = 'white';
@@ -437,7 +440,7 @@ class EditorManager {
                     toolbar.appendChild(runButton);
                 } else if (type === 'webgl' || type === 'webgpu') {
                     const saveButton = document.createElement('button');
-                    saveButton.textContent = '💾 Save (Ctrl+S)';
+                    saveButton.textContent = 'Save (Ctrl+S)';
                     saveButton.style.padding = '5px 10px';
                     saveButton.style.backgroundColor = '#4CAF50';
                     saveButton.style.color = 'white';
@@ -474,7 +477,9 @@ class EditorManager {
                     lineNumbers: true,
                     autoCloseBrackets: true,
                     matchBrackets: true,
-                    indentUnit: 4
+                    indentUnit: 4,
+                    gutters: type === 'webgl' || type === 'webgpu' ? ["CodeMirror-lint-markers"] : [],
+                    lint: type === 'webgl' || type === 'webgpu' ? true : false
                 });
 
                 // Add real-time compilation for WebGL nodes
@@ -545,7 +550,7 @@ class EditorManager {
 
                 // Add close button
                 const closeButton = document.createElement('button');
-                closeButton.textContent = '×';
+                closeButton.textContent = 'X';
                 closeButton.style.position = 'absolute';
                 closeButton.style.right = '10px';
                 closeButton.style.top = '10px';
@@ -680,7 +685,6 @@ class EditorManager {
     }
 
     updateNodeCode(nodeId, code) {
-        console.log('EditorManager: Updating code for node:', nodeId);
         const nodeData = this.nodeSystem.nodes.get(nodeId);
         if (!nodeData) {
             console.error('EditorManager: Node not found:', nodeId);

@@ -21,6 +21,9 @@ class ConnectionManager {
         this.svg.style.zIndex = '1';
         this.nodeSystem.container.appendChild(this.svg); // Append to container instead of body
         
+        // Initialize SVG size and position
+        this.updateSVGSize();
+        
         // Track node movements
         this.trackNodeMovements();
         
@@ -31,6 +34,7 @@ class ConnectionManager {
         let animationFrameId = null;
         
         const updateConnections = () => {
+            this.updateSVGSize(); // Update SVG size and position
             this.updateConnections();
             animationFrameId = null;
         };
@@ -42,7 +46,7 @@ class ConnectionManager {
             }
         });
 
-        // Listen for mouseup
+        // Listen for mouseup - this is crucial for updating SVG location
         document.addEventListener('mouseup', () => {
             if (!animationFrameId) {
                 animationFrameId = requestAnimationFrame(updateConnections);
@@ -60,6 +64,13 @@ class ConnectionManager {
             attributes: true,
             attributeFilter: ['style', 'transform'],
             subtree: true
+        });
+
+        // Listen for window resize
+        window.addEventListener('resize', () => {
+            if (!animationFrameId) {
+                animationFrameId = requestAnimationFrame(updateConnections);
+            }
         });
     }
 
@@ -111,7 +122,7 @@ class ConnectionManager {
             this.nodeSystem.shaderManager.updateShaderConnection(fromNode, toNode);
         }
         if (fromNodeData.type === 'hdmi' && toNodeData.type === 'webgl') {
-            console.log('Setting up webcam to WebGL connection');
+            console.log('Setting up HDMI to WebGL connection');
             this.nodeSystem.shaderManager.updateShaderConnection(fromNode, toNode);
         }
         // Draw the connection
@@ -166,7 +177,6 @@ class ConnectionManager {
     }
 
     updateConnections() {
-        console.log('Updating all connections');
         // Clear existing paths
         while (this.svg.firstChild) {
             this.svg.removeChild(this.svg.firstChild);
@@ -358,10 +368,26 @@ class ConnectionManager {
     }
 
     updateSVGSize() {
-        // Update SVG size to match container
-        const rect = this.nodeSystem.container.getBoundingClientRect();
-        this.svg.setAttribute('width', rect.width);
-        this.svg.setAttribute('height', rect.height);
+        // Update SVG size and position to match container
+        const containerRect = this.nodeSystem.container.getBoundingClientRect();
+        
+        // Update SVG dimensions
+        this.svg.setAttribute('width', containerRect.width);
+        this.svg.setAttribute('height', containerRect.height);
+        
+        // Ensure SVG is positioned correctly relative to container
+        this.svg.style.width = `${containerRect.width}px`;
+        this.svg.style.height = `${containerRect.height}px`;
+        this.svg.style.top = '0px';
+        this.svg.style.left = '0px';
+        
+     //   console.log('SVG updated - size:', containerRect.width, 'x', containerRect.height);
+    }
+
+    // Public method to manually trigger SVG update
+    forceUpdateSVG() {
+        this.updateSVGSize();
+        this.updateConnections();
     }
 
     clearAllConnections() {

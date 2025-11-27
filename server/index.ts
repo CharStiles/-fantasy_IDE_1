@@ -1,13 +1,16 @@
-import express, { type Request, Response, NextFunction } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { Server } from "socket.io";
 import { createServer } from "http";
-import { sendMessage } from "./services/gpt";
+import { sendMessage, isOpenAIAvailable } from "./services/gpt";
+import { sendTextMessage, sendImageMessage, isAnthropicAvailable } from "./services/anthropic";
+import { diffService } from "./services/diffService";
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+// Increase body parser limits to handle large canvas images
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -43,8 +46,9 @@ app.use((req, res, next) => {
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: {
-      origin: "http://localhost:5173",
-      methods: ["GET", "POST"]
+      origin: true, // Allow all origins in Replit environment
+      methods: ["GET", "POST"],
+      credentials: true
     }
   });
 
@@ -58,6 +62,12 @@ app.use((req, res, next) => {
         console.log('Socket.IO: Received AI query from client:', socket.id);
         console.log('Socket.IO: Query content:', message);
         
+        // Check if OpenAI is available before processing
+        if (!isOpenAIAvailable()) {
+          socket.emit('ai-response', "AI functionality is disabled. Please add OPENAI_API_KEY to your environment variables to enable AI features.");
+          return;
+        }
+        
         const response = await sendMessage(message);
         console.log('Socket.IO: AI response received:', response);
         
@@ -69,7 +79,81 @@ app.use((req, res, next) => {
           message: error instanceof Error ? error.message : 'Unknown error',
           stack: error instanceof Error ? error.stack : undefined
         });
-        socket.emit('ai-response', "Sorry, there was an error processing your request.");
+        
+        // Provide a more specific error message for API key issues
+        if (error instanceof Error && error.message.includes('API key not configured')) {
+          socket.emit('ai-response', "AI functionality is disabled. Please add OPENAI_API_KEY to your environment variables to enable AI features.");
+        } else {
+          socket.emit('ai-response', "Sorry, there was an error processing your request.");
+        }
+      }
+    });
+
+    socket.on('anthropic-text', async (data) => {
+      try {
+        console.log('Socket.IO: Received Anthropic text query from client:', socket.id);
+        console.log('Socket.IO: Query content:', data);
+        
+        const { message, model } = data;
+        
+        // Check if Anthropic is available before processing
+        if (!isAnthropicAvailable()) {
+          socket.emit('anthropic-text-response', "Anthropic functionality is disabled. Please add ANTHROPIC_API_KEY to your environment variables to enable AI features.");
+          return;
+        }
+        
+        const response = await sendTextMessage(message, model);
+        console.log('Socket.IO: Anthropic text response received:', response);
+        
+        socket.emit('anthropic-text-response', response);
+        console.log('Socket.IO: Anthropic text response sent to client:', socket.id);
+      } catch (error) {
+        console.error('Socket.IO: Error processing Anthropic text query:', error);
+        console.error('Socket.IO: Error details:', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined
+        });
+        
+        // Provide a more specific error message for API key issues
+        if (error instanceof Error && error.message.includes('API key not configured')) {
+          socket.emit('anthropic-text-response', "Anthropic functionality is disabled. Please add ANTHROPIC_API_KEY to your environment variables to enable AI features.");
+        } else {
+          socket.emit('anthropic-text-response', "Sorry, there was an error processing your request.");
+        }
+      }
+    });
+
+    socket.on('anthropic-image', async (data) => {
+      try {
+        console.log('Socket.IO: Received Anthropic image query from client:', socket.id);
+        console.log('Socket.IO: Image query data:', { imageType: data.imageType, promptLength: data.prompt?.length });
+        
+        const { imageBase64, imageType, prompt, model } = data;
+        
+        // Check if Anthropic is available before processing
+        if (!isAnthropicAvailable()) {
+          socket.emit('anthropic-image-response', "Anthropic functionality is disabled. Please add ANTHROPIC_API_KEY to your environment variables to enable AI features.");
+          return;
+        }
+        
+        const response = await sendImageMessage(imageBase64, imageType, prompt, model);
+        console.log('Socket.IO: Anthropic image response received:', response);
+        
+        socket.emit('anthropic-image-response', response);
+        console.log('Socket.IO: Anthropic image response sent to client:', socket.id);
+      } catch (error) {
+        console.error('Socket.IO: Error processing Anthropic image query:', error);
+        console.error('Socket.IO: Error details:', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined
+        });
+        
+        // Provide a more specific error message for API key issues
+        if (error instanceof Error && error.message.includes('API key not configured')) {
+          socket.emit('anthropic-image-response', "Anthropic functionality is disabled. Please add ANTHROPIC_API_KEY to your environment variables to enable AI features.");
+        } else {
+          socket.emit('anthropic-image-response', "Sorry, there was an error processing your request.");
+        }
       }
     });
 
@@ -99,14 +183,30 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on port 3000
+  // Serve the app on port 5000 for Replit compatibility
   // this serves both the API and the client
-  const port = 3000;
-  httpServer.listen({
+  const port = 5000;
+  const serverInstance = httpServer.listen({
     port,
     host: "0.0.0.0",
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
   });
+
+  // Cleanup on server shutdown
+  const cleanup = () => {
+    console.log('Server shutting down, cleaning up diffs...');
+    diffService.cleanupAllDiffs();
+    process.exit(0);
+  };
+
+  // Handle graceful shutdown
+  process.on('SIGTERM', cleanup);
+  process.on('SIGINT', cleanup);
+  process.on('exit', () => {
+    console.log('Server exiting, cleaning up diffs...');
+    diffService.cleanupAllDiffs();
+  });
+
 })();

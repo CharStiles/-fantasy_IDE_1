@@ -247,6 +247,9 @@ class WebGPUManager {
 
         const { device } = nodeData.data;
 
+        // Store old code for diff
+        const oldCode = nodeData.code || '';
+
         try {
             // Create new shader module
             const shaderModule = device.createShaderModule({
@@ -276,6 +279,11 @@ class WebGPUManager {
             // Update node data
             nodeData.data.pipeline = pipeline;
             nodeData.code = code;
+
+            // Save diff if code actually changed and diff functionality is enabled
+            if (oldCode !== code && this.nodeSystem.diffManager && this.nodeSystem.diffManager.isDiffEnabled()) {
+                this.nodeSystem.diffManager.saveDiff(nodeId, oldCode, code);
+            }
 
         } catch (error) {
             console.error('Error updating WebGPU shader:', error);

@@ -5,6 +5,7 @@ import EditorManager from './EditorManager.js';
 import JavaScriptNodeManager from './JavaScriptNodeManager.js';
 import WebGPUManager from './WebGPUManager.js';
 import AINodeManager from './AINodeManager.js';
+import DiffManager from './DiffManager.js';
 ///npx vite
 class NodeSystem {
     static #expandedNode = null;
@@ -12,10 +13,7 @@ class NodeSystem {
     constructor() {
         console.log('NodeSystem constructor called');
         
-        // Create toolbar first
-        this.createToolbar();
-        
-        // Then create container if it doesn't exist
+        // Create container first
         this.container = document.getElementById('node-container');
         if (!this.container) {
             this.container = document.createElement('div');
@@ -34,6 +32,10 @@ class NodeSystem {
         this.javaScriptNodeManager = new JavaScriptNodeManager(this);
         this.webgpuManager = new WebGPUManager(this);
         this.aiNodeManager = new AINodeManager(this);
+        this.diffManager = new DiffManager(this);
+        
+        // Create toolbar after AI node manager is initialized
+        this.createToolbar();
         
         // Initialize system
         this.initializeSystem();
@@ -82,37 +84,31 @@ class NodeSystem {
         };
 
         const buttons = [
-            { text: 'Add JS Tile', onClick: () => {
+            { text: 'JS Tile', onClick: () => {
                 const randomX = Math.floor(Math.random() * (window.innerWidth - 400));
                 const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
                 this.createNode('javascript', randomX, randomY);
             }},
-            { text: 'Add WebGL Tile', onClick: () => {
+            { text: 'WebGL Tile', onClick: () => {
                 const randomX = Math.floor(Math.random() * (window.innerWidth - 400));
                 const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
                 this.createNode('webgl', randomX, randomY);
             }},
-            { text: 'Add WebGPU Tile', onClick: () => {
+            { text: 'WebGPU Tile', onClick: () => {
                 const randomX = Math.floor(Math.random() * (window.innerWidth - 400));
                 const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
                 this.createNode('webgpu', randomX, randomY);
             }},
-            { text: 'Add Webcam Tile', onClick: () => {
+            { text: 'Webcam Tile', onClick: () => {
                 const randomX = Math.floor(Math.random() * (window.innerWidth - 400));
                 const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
                 this.createNode('webcam', randomX, randomY);
             }},
-            { text: 'Add HDMI Tile', onClick: () => {
+            { text: 'HDMI Tile', onClick: () => {
                 const randomX = Math.floor(Math.random() * (window.innerWidth - 400));
                 const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
                 this.createNode('hdmi', randomX, randomY);
             }},
-            { text: 'Add AI Tile', onClick: () => {
-                const randomX = Math.floor(Math.random() * (window.innerWidth - 400));
-                const randomY = Math.floor(Math.random() * (window.innerHeight - 300));
-                this.createNode('ai', randomX, randomY);
-            }},
-            { text: 'Random Background', onClick: () => this.setRandomNodeAsBackground() },
             { text: 'Toggle View', onClick: () => this.toggleView() }
         ];
 
@@ -120,13 +116,62 @@ class NodeSystem {
             const button = document.createElement('button');
             button.textContent = text;
             button.onclick = onClick;
-            Object.assign(button.style, buttonStyle);
+            
+            // Apply diff-visualization-button style to Toggle View button
+            if (text === 'Toggle View') {
+                button.className = 'diff-visualization-button';
+                button.style.cssText = `
+                    padding: 8px 16px;
+                    background-color: rgba(68, 68, 68, 0.2);
+                    color: white;
+                    border: 1px solid #ff69b4;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-family: 'Bianzhidai', monospace;
+                    font-size: 14px;
+                    margin-left: 10px;
+                    transition: all 0.3s ease;
+                    position: relative;
+                `;
+            } else {
+                Object.assign(button.style, buttonStyle);
+            }
+            
+            // Disable AI button if AI is not available
+            if (text === 'Add AI Tile' && this.aiNodeManager && !this.aiNodeManager.isAIAvailable) {
+                button.disabled = true;
+                button.style.opacity = '0.5';
+                button.style.cursor = 'not-allowed';
+                button.title = 'AI functionality is disabled - API key not available';
+            }
+            
             toolbar.appendChild(button);
         });
 
         document.body.appendChild(toolbar);
         console.log('Toolbar created with buttons:', buttons.length, 'buttons');
         return toolbar;
+    }
+
+    updateToolbar() {
+        // Update the AI button state based on current availability
+        const toolbar = document.getElementById('toolbar');
+        if (toolbar && this.aiNodeManager) {
+            const aiButton = Array.from(toolbar.children).find(button => button.textContent === 'Add AI Tile');
+            if (aiButton) {
+                if (!this.aiNodeManager.isAIAvailable) {
+                    aiButton.disabled = true;
+                    aiButton.style.opacity = '0.5';
+                    aiButton.style.cursor = 'not-allowed';
+                    aiButton.title = 'AI functionality is disabled - API key not available';
+                } else {
+                    aiButton.disabled = false;
+                    aiButton.style.opacity = '1';
+                    aiButton.style.cursor = 'pointer';
+                    aiButton.title = '';
+                }
+            }
+        }
     }
 
     createNode(type, x, y) {
@@ -196,7 +241,8 @@ class NodeSystem {
                     <span>${type.toUpperCase()}</span>
                     <div class="header-buttons">
                         <button class="expand-button">Edit</button>
-                        ${type === 'webcam' ? '<button class="device-select-button">📹</button>' : ''}
+                        ${type === 'webcam' ? '<button class="device-select-button">Cam</button>' : ''}
+                        <button class="close-button" title="Delete tile">X</button>
                     </div>
                 </div>
                 <div class="node-content">
@@ -219,6 +265,7 @@ class NodeSystem {
                 <span>${type}</span>
                 <div class="header-buttons">
                     <button class="expand-button">Edit</button>
+                    <button class="close-button" title="Delete tile">X</button>
                 </div>
             </div>
             <div class="node-content">
@@ -235,6 +282,11 @@ class NodeSystem {
         console.log('Initializing system...');
         this.eventHandler.initializeEventListeners();
         this.editorManager.initializeEditor();
+        
+        // Add diff visualization button after all managers are initialized
+        if (this.diffManager) {
+           this.diffManager.createVisualizationButton();
+        }
     }
 
     static get expandedNode() {
@@ -334,17 +386,17 @@ class NodeSystem {
         if (nodeData.type === 'webgl') {
             // For WebGL nodes, create a new canvas
             const canvas = document.createElement('canvas');
-            // Match the expanded node dimensions (window size minus 40px padding)
-            canvas.width = window.innerWidth - 40;
-            canvas.height = window.innerHeight - 40;
-            canvas.style.width = '100%';
-            canvas.style.height = '100%';
+            // Set canvas to full window size
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            canvas.style.width = '100vw';
+            canvas.style.height = '100vh';
             canvas.style.display = 'block';
-            // Center the canvas like in expanded mode
-            canvas.style.position = 'absolute';
-            canvas.style.top = '50%';
-            canvas.style.left = '50%';
-            canvas.style.transform = 'translate(-50%, -50%)';
+            // Position canvas to cover entire viewport
+            canvas.style.position = 'fixed';
+            canvas.style.top = '0';
+            canvas.style.left = '0';
+            canvas.style.transform = 'none';
             content.appendChild(canvas);
             
             // Register the background as a node in the system
@@ -358,10 +410,18 @@ class NodeSystem {
             // Initialize WebGL for the background
             this.shaderManager.initializeWebGL(background);
             
-            // Copy the shader code
+            // Force a reflow to ensure canvas is in DOM
+            canvas.offsetHeight;
+            
+            // Resize the WebGL canvas to full window size
+            this.shaderManager.resizeCanvas('background', window.innerWidth, window.innerHeight);
+            
+            // Copy the shader code and ensure it's updated
             if (nodeData.code) {
                 requestAnimationFrame(() => {
                     this.shaderManager.updateShader('background', nodeData.code);
+                    // Force another resize after shader update
+                    this.shaderManager.resizeCanvas('background', window.innerWidth, window.innerHeight);
                 });
             }
         } else {
@@ -391,10 +451,10 @@ class NodeSystem {
         // Style the background with matching padding
         Object.assign(background.style, {
             position: 'fixed',
-            top: '20px',
-            left: '20px',
-            width: 'calc(100vw - 40px)',
-            height: 'calc(100vh - 40px)',
+            top: '0',
+            left: '0',
+            width: '100vw',
+            height: '100vh',
             zIndex: '-1',
             opacity: '1',
             pointerEvents: 'none',

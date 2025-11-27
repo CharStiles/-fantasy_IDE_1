@@ -3,21 +3,69 @@ class AINodeManager {
         this.nodeSystem = nodeSystem;
         this.socket = null;
         this.isConnected = false;
-        this.isEnabled = true; // Always enabled
+        this.isEnabled = false; // Start disabled until we check availability
+        this.isAIAvailable = false; // Track if AI is available
         console.log('AINodeManager: Initializing...');
-        this.initializeSocket();
-        this.setupConnectionEvents();
-        this.responseDiv = null;
+        this.checkAIAvailability();
+    }
+
+    async checkAIAvailability() {
+        try {
+            const response = await fetch('/api/ai/status');
+            const data = await response.json();
+            
+            // Check if either OpenAI or Anthropic is available
+            const openaiAvailable = data.openai && data.openai.available;
+            const anthropicAvailable = data.anthropic && data.anthropic.available;
+            this.isAIAvailable = openaiAvailable || anthropicAvailable;
+            this.isEnabled = this.isAIAvailable;
+            
+            console.log('AINodeManager: AI availability check result:', data);
+            console.log('AINodeManager: OpenAI available:', openaiAvailable);
+            console.log('AINodeManager: Anthropic available:', anthropicAvailable);
+            console.log('AINodeManager: Overall AI available:', this.isAIAvailable);
+            
+            if (this.isAIAvailable) {
+                this.initializeSocket();
+                this.setupConnectionEvents();
+            } else {
+                console.log('AINodeManager: AI is not available, disabling AI functionality');
+                const message = data.openai?.message || data.anthropic?.message || 'AI functionality is disabled';
+                this.updateConnectionStatus(false, message);
+            }
+            
+            // Update the toolbar to reflect AI availability
+            if (this.nodeSystem && this.nodeSystem.updateToolbar) {
+                this.nodeSystem.updateToolbar();
+            }
+        } catch (error) {
+            console.error('AINodeManager: Failed to check AI availability:', error);
+            this.isAIAvailable = false;
+            this.isEnabled = false;
+            this.updateConnectionStatus(false, 'Failed to check AI availability');
+            
+            // Update the toolbar even on error
+            if (this.nodeSystem && this.nodeSystem.updateToolbar) {
+                this.nodeSystem.updateToolbar();
+            }
+        }
     }
 
     initializeSocket() {
+        if (!this.isAIAvailable) {
+            console.log('AINodeManager: Skipping socket initialization - AI not available');
+            return;
+        }
+
         console.log('AINodeManager: Attempting to connect to Socket.IO server...');
         
         // Create socket with reconnection options
-        this.socket = io('http://localhost:3000', {
+        this.socket = io({
             reconnection: true, // Enable automatic reconnection
             timeout: 5000, // Shorter timeout
-            autoConnect: true // Connect automatically
+            autoConnect: true, // Connect automatically
+            withCredentials: true,
+            transports: ['websocket', 'polling']
         });
 
         // Always try to connect
@@ -25,7 +73,7 @@ class AINodeManager {
     }
 
     connectToServer() {
-        if (this.socket) {
+        if (this.socket && this.isAIAvailable) {
             this.socket.connect();
         }
     }
@@ -37,6 +85,11 @@ class AINodeManager {
     }
 
     enableAI() {
+        if (!this.isAIAvailable) {
+            console.log('AINodeManager: Cannot enable AI - API key not available');
+            return;
+        }
+        
         this.isEnabled = true;
         this.connectToServer();
         this.updateConnectionStatus(false, 'Connecting to AI server...');
@@ -49,7 +102,7 @@ class AINodeManager {
     }
 
     setupConnectionEvents() {
-        if (!this.socket) return;
+        if (!this.socket || !this.isAIAvailable) return;
 
         this.socket.on('connect', () => {
             console.log('AINodeManager: Connected to server with ID:', this.socket.id);
@@ -113,7 +166,7 @@ class AINodeManager {
             
             // Only update code if in code replacement mode
             if (nodeData.mode === 'code' && nodeData.connectedNodeId) {
-                console.log('AINodeManager: Updating code for connected node:', nodeData.connectedNodeId);
+               // console.log('AINodeManager: Updating code for connected node:', nodeData.connectedNodeId);
                 
                 // Update the node's code in the system
                 const targetNodeData = this.nodeSystem.nodes.get(nodeData.connectedNodeId);
@@ -144,13 +197,24 @@ class AINodeManager {
             const statusIndicator = node.querySelector('.connection-status') || 
                 this.createStatusIndicator(node);
             
-            statusIndicator.className = `connection-status ${connected ? 'connected' : 'disconnected'}`;
-            statusIndicator.title = message || (connected ? 'Connected to AI server' : 'Disconnected from AI server');
+            // If AI is not available, show disabled status
+            if (!this.isAIAvailable) {
+                statusIndicator.className = 'connection-status disabled';
+                statusIndicator.title = 'AI functionality is disabled - API key not available';
+                statusIndicator.style.backgroundColor = 'gray';
+            } else {
+                statusIndicator.className = `connection-status ${connected ? 'connected' : 'disconnected'}`;
+                statusIndicator.title = message || (connected ? 'Connected to AI server' : 'Disconnected from AI server');
+                statusIndicator.style.backgroundColor = connected ? 'green' : 'red';
+            }
             
             // Update the response div with the status message
             const responseDiv = node.querySelector('.ai-response');
             if (responseDiv) {
-                if (!connected) {
+                if (!this.isAIAvailable) {
+                    responseDiv.textContent = 'AI functionality is disabled. Please add OPENAI_API_KEY to your environment variables to enable AI features.';
+                    responseDiv.style.display = 'block';
+                } else if (!connected) {
                     responseDiv.textContent = message || 'Disconnected from AI server';
                     responseDiv.style.display = 'block';
                 } else {
@@ -162,15 +226,15 @@ class AINodeManager {
 
     createStatusIndicator(node) {
         const statusIndicator = document.createElement('div');
-        statusIndicator.className = 'connection-status disconnected';
+        statusIndicator.className = 'connection-status disabled';
         statusIndicator.style.position = 'absolute';
         statusIndicator.style.top = '5px';
         statusIndicator.style.right = '5px';
         statusIndicator.style.width = '10px';
         statusIndicator.style.height = '10px';
         statusIndicator.style.borderRadius = '50%';
-        statusIndicator.style.backgroundColor = 'red';
-        statusIndicator.title = 'Disconnected from AI server';
+        statusIndicator.style.backgroundColor = 'gray';
+        statusIndicator.title = 'AI functionality is disabled - API key not available';
         
         node.appendChild(statusIndicator);
         return statusIndicator;
@@ -179,10 +243,11 @@ class AINodeManager {
     getNodeTemplate() {
         return `
             <div class="node-header">
-                <span>AI Assistant</span>
+                <span>AI tile</span>
                 <div class="header-buttons">
                     <button class="expand-button">Edit</button>
-                    <button class="mode-toggle-button" title="Toggle between modes">💬</button>
+                    <button class="mode-toggle-button" title="Toggle between modes">Chat</button>
+                    <button class="close-button" title="Delete tile">X</button>
                 </div>
             </div>
             <div class="node-content">
@@ -204,7 +269,7 @@ class AINodeManager {
                         font-family: monospace;
                         user-select: text;
                     "></div>
-                    <button class="copy-button" title="Copy to clipboard">📋</button>
+                    <button class="copy-button" title="Copy to clipboard">Copy</button>
                 </div>
             </div>
             <div class="node-ports">
@@ -224,6 +289,16 @@ class AINodeManager {
         const nodeData = this.nodeSystem.nodes.get(node.id);
         nodeData.mode = 'code'; // Default to code replacement mode
 
+        // Disable input and button if AI is not available
+        if (!this.isAIAvailable) {
+            input.disabled = true;
+            input.placeholder = 'AI functionality is disabled - API key not available';
+            sendButton.disabled = true;
+            sendButton.textContent = 'Disabled';
+            responseDiv.textContent = 'AI functionality is disabled. Please add OPENAI_API_KEY to your environment variables to enable AI features.';
+            responseDiv.style.display = 'block';
+        }
+
         // Add click handler to make this node active
         node.addEventListener('click', () => {
             // Remove active class from all AI nodes
@@ -236,19 +311,23 @@ class AINodeManager {
 
         // Add mode toggle handler
         modeToggle.addEventListener('click', () => {
+            if (!this.isAIAvailable) {
+                return; // Don't allow mode changes if AI is disabled
+            }
+            
             const nodeData = this.nodeSystem.nodes.get(node.id);
             // Cycle through modes: chat -> code -> toggle view -> chat
             if (nodeData.mode === 'chat') {
                 nodeData.mode = 'code';
-                modeToggle.textContent = '✏️';
+                modeToggle.textContent = 'Edit';
                 modeToggle.title = 'Code replacement mode (click to switch to toggle view context)';
             } else if (nodeData.mode === 'code') {
                 nodeData.mode = 'toggle';
-                modeToggle.textContent = '📋';
+                modeToggle.textContent = 'Code';
                 modeToggle.title = 'Toggle view context mode (click to switch to chat)';
             } else {
                 nodeData.mode = 'chat';
-                modeToggle.textContent = '💬';
+                modeToggle.textContent = 'Chat';
                 modeToggle.title = 'Chat mode (click to switch to code replacement)';
             }
         });
@@ -269,6 +348,12 @@ class AINodeManager {
         });
 
         sendButton.addEventListener('click', () => {
+            if (!this.isAIAvailable) {
+                responseDiv.textContent = 'AI functionality is disabled. Please add OPENAI_API_KEY to your environment variables to enable AI features.';
+                responseDiv.style.display = 'block';
+                return;
+            }
+
             if (!this.isEnabled || !this.isConnected) {
                 responseDiv.textContent = 'AI functionality is disabled. Please enable it using the toolbar.';
                 responseDiv.style.display = 'block';

@@ -1,6 +1,7 @@
 // Import any required dependencies at the top
 // import { CodeMirror } from 'codemirror';  // Uncomment if needed
 import { fragmentShaders } from './defaultShaders.js';
+import DiffManager from './node-system/DiffManager.js';
 
 // Global state (move inside the class as static or private fields)
 class NodeSystem {
@@ -20,6 +21,7 @@ class NodeSystem {
         this.dragOffset = { x: 0, y: 0 };
         this.draggedConnection = null;
         this.tempConnection = null;
+        this.diffManager = new DiffManager(this);
         this.setupEventListeners();
         this.initializeShaderEditor();
         this.setupConnectionEventListeners();
@@ -438,7 +440,7 @@ function processCheckboxGrid(grid) {
         render();
     }
 
-    renderWebGLNode(node) {
+    async renderWebGLNode(node) {
         if (!node || !node.data || !node.data.gl) return;
 
         const { gl, program, buffer, positionLocation, timeLocation, resolutionLocation } = node.data;
@@ -479,11 +481,27 @@ function processCheckboxGrid(grid) {
         gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
 
         // Set uniforms
+        console.log(`Setting uniforms for node ${node.element.id}:`, {
+            timeLocation,
+            resolutionLocation,
+            program: program,
+            hasTimeUniform: timeLocation !== null,
+            hasResolutionUniform: resolutionLocation !== null
+        });
+        
         if (timeLocation !== null) {
-            gl.uniform1f(timeLocation, performance.now() / 1000);
+            try {
+                gl.uniform1f(timeLocation, performance.now() / 1000);
+            } catch (e) {
+                console.log(`Failed to set time uniform for node ${node.element.id}:`, e);
+            }
         }
         if (resolutionLocation !== null) {
-            gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+            try {
+                gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+            } catch (e) {
+                console.log(`Failed to set resolution uniform for node ${node.element.id}:`, e);
+            }
         }
 
         // Call custom render function if it exists
@@ -498,6 +516,48 @@ function processCheckboxGrid(grid) {
         const pixels = new Uint8Array(4);
         gl.readPixels(canvas.width/2, canvas.height/2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
         console.log(`Content at center for node ${node.element.id}:`, pixels);
+        
+        // Capture the canvas immediately after drawing (for diff system)
+        console.log('Checking for capture during render:', {
+            hasDiffManager: !!this.diffManager,
+            pendingCaptureNodeId: this.diffManager?.pendingCaptureNodeId,
+            currentNodeId: node.element.id,
+            shouldCapture: this.diffManager && this.diffManager.pendingCaptureNodeId === node.element.id
+        });
+        
+        if (this.diffManager && this.diffManager.pendingCaptureNodeId === node.element.id) {
+            console.log('Capturing canvas during render for node:', node.element.id);
+            try {
+                // Capture immediately after drawing
+                const imageBitmap = await createImageBitmap(canvas);
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // Fill with white background
+                tempCtx.fillStyle = 'white';
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                
+                // Draw the image bitmap
+                tempCtx.drawImage(imageBitmap, 0, 0);
+                
+                const dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                const base64Data = dataURL.split(',')[1];
+                
+                this.diffManager.capturedImageData = {
+                    image: base64Data,
+                    type: 'image/png',
+                    width: canvas.width,
+                    height: canvas.height
+                };
+                
+                console.log('Canvas captured during render successfully');
+                this.diffManager.pendingCaptureNodeId = null; // Clear the pending capture
+            } catch (e) {
+                console.log('Canvas capture during render failed:', e);
+            }
+        }
 
         // If this node has a framebuffer, copy the result to its texture
         if (node.data.frameBuffer && node.data.outputTexture) {
@@ -716,11 +776,19 @@ function processCheckboxGrid(grid) {
             return;
         }
 
+        // Store old code for diff
+        const oldCode = node.code || '';
+
         console.log("Shader updated successfully for node:", NodeSystem.#activeNodeId);
         node.code = fragmentCode;
         node.lastWorkingCode = fragmentCode;
         NodeSystem.#isDirty = true;
         this.updateShaderProgram(node);
+
+        // Save diff if code actually changed
+        if (oldCode !== fragmentCode && this.diffManager) {
+            this.diffManager.saveDiff(NodeSystem.#activeNodeId, oldCode, fragmentCode);
+        }
     }
 
     checkShaderErrors(gl, code) {
@@ -1007,6 +1075,9 @@ function processCheckboxGrid(grid) {
         if (container) {
             container.appendChild(button);
         }
+
+        // Add diff visualization button
+       // this.diffManager.createVisualizationButton();
     }
 
     updateShaderProgram(node) {

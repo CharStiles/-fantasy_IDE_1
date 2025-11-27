@@ -5,6 +5,7 @@ class ShaderManager {
         this.nodeSystem = nodeSystem;
         //random shader
         this.defaultShaderCode = fragmentShaders[Math.floor(Math.random() * fragmentShaders.length)];
+        this.lastCompilationErrors = []; // Store compilation errors for linting
         this.initAudio();
         
         // Add mouse tracking with initial values
@@ -27,15 +28,41 @@ class ShaderManager {
             // Create audio input
             navigator.mediaDevices.getUserMedia({ audio: true })
                 .then(stream => {
+                    // Resume audio context if suspended
+                    if (this.audioContext.state === 'suspended') {
+                        this.audioContext.resume();
+                    }
+                    
                     const source = this.audioContext.createMediaStreamSource(stream);
                     source.connect(this.analyzer);
-                    console.log('Audio analyzer initialized');
+                    console.log('Audio analyzer initialized successfully');
+                    console.log('Audio context state:', this.audioContext.state);
+                    console.log('Analyzer frequency bin count:', this.analyzer.frequencyBinCount);
                 })
-                .catch(err => console.error('Error accessing microphone:', err));
+                .catch(err => {
+                    console.error('Error accessing microphone:', err);
+                    // Create a fallback analyzer with dummy data
+                    this.createFallbackAudio();
+                });
         } catch (err) {
             console.error('Error initializing audio context:', err);
+            // Create a fallback analyzer with dummy data
+            this.createFallbackAudio();
         }
     }
+
+    createFallbackAudio() {
+        console.log('Creating fallback audio analyzer');
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            this.analyzer = this.audioContext.createAnalyser();
+            this.analyzer.fftSize = 128;
+            console.log('Fallback audio analyzer created');
+        } catch (err) {
+            console.error('Failed to create fallback audio:', err);
+        }
+    }
+
     initializeWebGL(node) {
         this.defaultShaderCode = fragmentShaders[Math.floor(Math.random() * fragmentShaders.length)];
 
@@ -236,6 +263,54 @@ class ShaderManager {
                 gl.uniform4f(nodeData.uniforms.u_spectrum, bass, lowMid, highMid, treble);
             }
 
+            // Update webcam texture if connected
+            if (nodeData.data.webcamLocation) {
+                // Find the webcam node that's connected to this WebGL node
+                const webcamConnections = Array.from(this.nodeSystem.connectionManager.connections.values())
+                    .filter(conn => conn.to === node.id);
+                
+                for (const connection of webcamConnections) {
+                    const webcamNode = document.getElementById(connection.from);
+                    if (webcamNode) {
+                        const webcamNodeData = this.nodeSystem.nodes.get(connection.from);
+                        if (webcamNodeData && webcamNodeData.type === 'webcam') {
+                            const video = webcamNode.querySelector('video');
+                            if (video && video.readyState >= video.HAVE_CURRENT_DATA) {
+                                gl.activeTexture(gl.TEXTURE2);
+                                gl.bindTexture(gl.TEXTURE_2D, nodeData.data.webcamTexture || gl.createTexture());
+                                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+                                gl.uniform1i(nodeData.data.webcamLocation, 2);
+                                break; // Only handle the first webcam connection
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Update HDMI texture if connected
+            if (nodeData.data.hdmiTexture && nodeData.data.hdmiLocation) {
+                // Find the HDMI node that's connected to this WebGL node
+                const hdmiConnections = Array.from(this.nodeSystem.connectionManager.connections.values())
+                    .filter(conn => conn.to === node.id);
+                
+                for (const connection of hdmiConnections) {
+                    const hdmiNode = document.getElementById(connection.from);
+                    if (hdmiNode) {
+                        const hdmiNodeData = this.nodeSystem.nodes.get(connection.from);
+                        if (hdmiNodeData && hdmiNodeData.type === 'hdmi') {
+                            const video = hdmiNode.querySelector('video');
+                            if (video && video.readyState >= video.HAVE_CURRENT_DATA) {
+                                gl.activeTexture(gl.TEXTURE3);
+                                gl.bindTexture(gl.TEXTURE_2D, nodeData.data.hdmiTexture);
+                                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+                                gl.uniform1i(nodeData.data.hdmiLocation, 3);
+                                break; // Only handle the first HDMI connection
+                            }
+                        }
+                    }
+                }
+            }
+
             // Draw to framebuffer
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
@@ -256,7 +331,6 @@ class ShaderManager {
             connections.forEach(connection => {
                 const targetNode = document.getElementById(connection.to);
                 if (targetNode) {
-                    console.log('Updating connected node:', connection.to);
                     this.updateCheckboxGrid(gl, targetNode);
                 }
             });
@@ -282,9 +356,23 @@ class ShaderManager {
 
         const gl = nodeData.data.gl;
         const canvas = gl.canvas;
+        
+        // Update canvas dimensions
         canvas.width = width;
         canvas.height = height;
+        
+        // Update canvas style
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        
+        // Update WebGL viewport
         gl.viewport(0, 0, width, height);
+        
+        // Update resolution uniform if it exists
+        if (nodeData.data.resolutionLocation) {
+            gl.useProgram(nodeData.data.program);
+            gl.uniform2f(nodeData.data.resolutionLocation, width, height);
+        }
 
         // Resize framebuffer textures
         const { tex1, tex2 } = nodeData.data.textures;
@@ -301,6 +389,9 @@ class ShaderManager {
     }
 
     createShaderProgram(gl, shaderCode) {
+        // Clear previous compilation errors
+        this.lastCompilationErrors = [];
+        
         // Create vertex shader
         const vertexShader = gl.createShader(gl.VERTEX_SHADER);
         gl.shaderSource(vertexShader, `
@@ -322,7 +413,30 @@ class ShaderManager {
         gl.compileShader(fragmentShader);
 
         if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
-            console.error('Fragment shader compilation failed:', gl.getShaderInfoLog(fragmentShader));
+            const infoLog = gl.getShaderInfoLog(fragmentShader);
+            console.error('Fragment shader compilation failed:', infoLog);
+            
+            // Parse and save compilation errors for linting
+            const errors = infoLog.split(/\r|\n/);
+            for (let error of errors) {
+                if (error.trim()) {
+                    const splitResult = error.split(":");
+                    if (splitResult.length >= 5) {
+                        this.lastCompilationErrors.push({
+                            message: (splitResult[3] + splitResult[4]).trim(),
+                            character: parseInt(splitResult[1]) || 0,
+                            line: parseInt(splitResult[2]) || 0
+                        });
+                    } else {
+                        // Fallback for errors that don't follow the standard format
+                        this.lastCompilationErrors.push({
+                            message: error.trim(),
+                            character: 0,
+                            line: 1
+                        });
+                    }
+                }
+            }
             return null;
         }
 
@@ -351,7 +465,7 @@ class ShaderManager {
         return program;
     }
 
-    updateShader(nodeId, code) {
+    async updateShader(nodeId, code) {
         console.log('Updating shader for node:', nodeId);
         const nodeData = this.nodeSystem.nodes.get(nodeId);
         if (!nodeData || !nodeData.data || !nodeData.data.gl) {
@@ -361,6 +475,9 @@ class ShaderManager {
 
         const { gl } = nodeData.data;
         console.log('Creating new shader program with code:', code);
+        
+        // Store old code for diff
+        const oldCode = nodeData.code || '';
         
         // Create new program
         const newProgram = this.createShaderProgram(gl, code);
@@ -376,6 +493,7 @@ class ShaderManager {
         const mouseLocation = gl.getUniformLocation(newProgram, 'u_mouse');
         const prevFrameLocation = gl.getUniformLocation(newProgram, 'u_prevFrame');
         const webcamLocation = gl.getUniformLocation(newProgram, 'u_webcam');
+        const hdmiLocation = gl.getUniformLocation(newProgram, 'u_hdmi');
 
         // Only after successful creation, update the node data
         const oldProgram = nodeData.data.program;
@@ -393,9 +511,100 @@ class ShaderManager {
             nodeData.data.webcamLocation = webcamLocation;
         }
         
+        // Preserve HDMI connection if it exists
+        if (hdmiLocation !== null) {
+            gl.useProgram(newProgram);
+            gl.uniform1i(hdmiLocation, 3);
+            nodeData.data.hdmiLocation = hdmiLocation;
+        }
+        
         nodeData.code = code;
 
         console.log('Shader updated successfully');
+
+        // Capture the canvas immediately after successful shader update
+        console.log('Checking capture condition in shader manager:', {
+            hasDiffManager: !!this.nodeSystem.diffManager,
+            pendingCaptureNodeId: this.nodeSystem.diffManager?.pendingCaptureNodeId,
+            currentNodeId: nodeId,
+            shouldCapture: this.nodeSystem.diffManager && this.nodeSystem.diffManager.pendingCaptureNodeId === nodeId
+        });
+        
+        if (this.nodeSystem.diffManager && this.nodeSystem.diffManager.pendingCaptureNodeId === nodeId) {
+            console.log('Capturing canvas after successful shader update for node:', nodeId);
+            try {
+                // Get the canvas
+                const canvas = document.getElementById(nodeId)?.querySelector('canvas');
+                if (canvas) {
+                    // Force a render with the new shader
+                    gl.useProgram(newProgram);
+                    gl.viewport(0, 0, canvas.width, canvas.height);
+                    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                    
+                    // Set up basic uniforms if they exist
+                    if (timeLocation !== null) {
+                        gl.uniform1f(timeLocation, performance.now() / 1000);
+                    }
+                    if (resolutionLocation !== null) {
+                        gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+                    }
+                    
+                    // Draw a full-screen quad
+                    const positions = new Float32Array([
+                        -1, -1,
+                         1, -1,
+                        -1,  1,
+                         1,  1
+                    ]);
+                    
+                    const positionBuffer = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+                    
+                    if (positionLocation !== -1) {
+                        gl.enableVertexAttribArray(positionLocation);
+                        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+                    }
+                    
+                    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                    
+                    // Capture immediately after drawing
+                    const imageBitmap = await createImageBitmap(canvas);
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = canvas.width;
+                    tempCanvas.height = canvas.height;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    
+                    // Fill with white background
+                    tempCtx.fillStyle = 'white';
+                    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                    
+                    // Draw the image bitmap
+                    tempCtx.drawImage(imageBitmap, 0, 0);
+                    
+                    const dataURL = tempCanvas.toDataURL('image/png', 0.8);
+                    const base64Data = dataURL.split(',')[1];
+                    
+                    this.nodeSystem.diffManager.capturedImageData = {
+                        image: base64Data,
+                        type: 'image/png',
+                        width: canvas.width,
+                        height: canvas.height
+                    };
+                    
+                    console.log('Canvas captured after shader update successfully');
+                    this.nodeSystem.diffManager.pendingCaptureNodeId = null; // Clear the pending capture
+                }
+            } catch (e) {
+                console.log('Canvas capture after shader update failed:', e);
+            }
+        }
+
+        // Save diff if code actually changed and diff functionality is enabled
+        if (oldCode !== code && this.nodeSystem.diffManager && this.nodeSystem.diffManager.isDiffEnabled()) {
+            this.nodeSystem.diffManager.saveDiff(nodeId, oldCode, code);
+        }
 
         // Clean up old program after setting the new one
         if (oldProgram) {
@@ -420,7 +629,7 @@ class ShaderManager {
         document.getElementById('toolbar').appendChild(hdmiButton);
     }
 
-    updateShaderConnection(fromNode, toNode) {
+    async updateShaderConnection(fromNode, toNode) {
         console.log('Setting up shader connection between:', fromNode.id, 'and', toNode.id);
         
         const fromNodeData = this.nodeSystem.nodes.get(fromNode.id);
@@ -445,6 +654,9 @@ class ShaderManager {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            
+            // Store texture reference in node data for later use
+            toNodeData.data.webcamTexture = texture;
 
             // Get the current shader code
             let shaderCode = toNodeData.code;
@@ -471,22 +683,18 @@ class ShaderManager {
             console.log('Webcam uniform location:', webcamLocation);
             gl.uniform1i(webcamLocation, 2);  // Use texture unit 2
 
-            // Update texture in render loop
-            const updateTexture = () => {
-                if (video.readyState >= video.HAVE_CURRENT_DATA) {
-                    console.log('Updating texture with video frame');
-                    gl.activeTexture(gl.TEXTURE2);
-                    gl.bindTexture(gl.TEXTURE_2D, texture);
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-                }
-                requestAnimationFrame(updateTexture);
-            };
-            updateTexture();
+            // Texture updates are now handled in the main WebGL render loop
 
             console.log('Webcam setup complete');
         } else if (fromNodeData.type === 'hdmi' && toNodeData.type === 'webgl') {
             const gl = toNodeData.data.gl;
-            const video = fromNodeData.data.video;
+            // For HDMI nodes, get video element directly from DOM (same as webcam)
+            const video = fromNode.querySelector('video');
+            
+            if (!video) {
+                console.error('No video element found in HDMI node');
+                return;
+            }
             
             console.log('Setting up HDMI connection');
             console.log('Video element:', video);
@@ -494,48 +702,45 @@ class ShaderManager {
 
             // Create and setup texture for HDMI
             const texture = gl.createTexture();
-            gl.activeTexture(gl.TEXTURE2);
+            gl.activeTexture(gl.TEXTURE3);  // Use texture unit 3 for HDMI (webcam uses 2)
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            
+            // Store texture reference in node data for later use
+            toNodeData.data.hdmiTexture = texture;
 
             // Get the current shader code
             let shaderCode = toNodeData.code;
-            if (!shaderCode.includes('uniform sampler2D u_webcam;')) {
+            if (!shaderCode.includes('uniform sampler2D u_hdmi;')) {
                 const uniformIndex = shaderCode.lastIndexOf('uniform');
                 const insertPosition = uniformIndex !== -1 ? 
                     shaderCode.indexOf(';', uniformIndex) + 1 : 
                     shaderCode.indexOf('void main()');
                 
-                const webcamUniform = '\nuniform sampler2D u_webcam;\n// vec4 s = texture2D(u_webcam, normCoord);';
+                const hdmiUniform = '\nuniform sampler2D u_hdmi;\n//vec4 s = texture2D(u_hdmi,  vec2(gl_FragCoord.x/u_resolution.x  * (u_resolution.y/u_resolution.x) ,1.-(gl_FragCoord.y/u_resolution.y)));';
                 shaderCode = shaderCode.slice(0, insertPosition) + 
-                           webcamUniform +
+                           hdmiUniform +
                            shaderCode.slice(insertPosition);
             }
             
-            this.updateShader(toNode.id, shaderCode);
+            await this.updateShader(toNode.id, shaderCode);
 
-            // Get the new program
+            // Get the updated program and uniform location from node data
             const program = toNodeData.data.program;
+            const hdmiLocation = toNodeData.data.hdmiLocation;
+            
+            if (!program || !hdmiLocation) {
+                console.error('Failed to get program or HDMI uniform location');
+                return;
+            }
+            
+            console.log('HDMI uniform location:', hdmiLocation);
             gl.useProgram(program);
+            gl.uniform1i(hdmiLocation, 3);  // Use texture unit 3
 
-            // Get uniform location
-            const webcamLocation = gl.getUniformLocation(program, 'u_webcam');
-            console.log('HDMI uniform location:', webcamLocation);
-            gl.uniform1i(webcamLocation, 2);  // Use texture unit 2
-
-            // Update texture in render loop
-            const updateTexture = () => {
-                if (video.readyState >= video.HAVE_CURRENT_DATA) {
-                    console.log('Updating texture with HDMI frame');
-                    gl.activeTexture(gl.TEXTURE2);
-                    gl.bindTexture(gl.TEXTURE_2D, texture);
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-                }
-                requestAnimationFrame(updateTexture);
-            };
-            updateTexture();
+            // Texture updates are now handled in the main WebGL render loop
 
             console.log('HDMI setup complete');
         }
@@ -575,7 +780,7 @@ class ShaderManager {
             // Add source selection button
             const header = node.querySelector('.node-header');
             const switchButton = document.createElement('button');
-            switchButton.textContent = '📹';
+            switchButton.textContent = 'Cam';
             switchButton.className = 'switch-camera';
             switchButton.style.marginLeft = '5px';
             switchButton.onclick = () => this.switchWebcamSource(node);
@@ -753,6 +958,7 @@ class ShaderManager {
             }
         `;
     }
+
 }
 
 // export default ShaderManager; 

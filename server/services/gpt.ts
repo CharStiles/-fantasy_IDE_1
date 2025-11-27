@@ -52,6 +52,16 @@ export async function sendMessage(
   initialDelay: number = 1000
 ): Promise<string> {
   console.log(`Sending message to ${AI_PROVIDER} API...`);
+  // Check if API key is available
+  if (!isOpenAIAvailable()) {
+    throw new Error('OpenAI API key not configured. Please add OPENAI_API_KEY to your environment variables.');
+  }
+
+  if (!openai) {
+    throw new Error('OpenAI client not initialized. Please add OPENAI_API_KEY to your environment variables.');
+  }
+
+  console.log("Sending message to OpenAI API...");
   console.log("Message length:", message.length);
   console.log("Max retries:", maxRetries);
   console.log("Initial delay:", initialDelay);
