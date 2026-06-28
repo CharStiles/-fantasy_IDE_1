@@ -484,7 +484,7 @@ float lissajous(vec2 pos, float prog, float a, float b){
   
   float progC = (200.*(prog));
   float v = 0.0;
-  for (int i = 0; i < (200*int(12)); i++) {
+  for (int i = 0; i < (30*int(12)); i++) {
     
     if(progC <= 0.){
     	break;

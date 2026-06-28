@@ -262,7 +262,7 @@ class ConnectionManager {
                   ${to.x},${to.y}`;
     }
 
-    updateConnections(nodeId) {
+    updateConnectionsForNode(nodeId) {
         // Update all connections involving this node
         this.connections.forEach((connection, id) => {
             if (connection.from === nodeId || connection.to === nodeId) {
