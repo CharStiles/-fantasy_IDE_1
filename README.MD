@@ -1,4 +1,6 @@
-# Fantasy IDE 🎨✨
+# Fantasy IDE
+
+running at [ide.charstiles.com](ide.charstiles.com)
 
 These are a series of experiments with reimagining the creative coding IDE.
 This verion has bi-directional programming, with a javascript represention and a visual graphical representation. It has an AI tile that can augment the code as well as critique it. Other graphical integrations are webGL, webGPU and windowing/webcam input
