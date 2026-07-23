@@ -125,6 +125,11 @@ class ConnectionManager {
             console.log('Setting up HDMI to WebGL connection');
             this.nodeSystem.shaderManager.updateShaderConnection(fromNode, toNode);
         }
+        // Handle WebGL shader to WebGL shader connection
+        if (fromNodeData.type === 'webgl' && toNodeData.type === 'webgl') {
+            console.log('Setting up WebGL to WebGL texture connection');
+            this.nodeSystem.shaderManager.updateShaderConnection(fromNode, toNode);
+        }
         // Draw the connection
         this.drawConnection(fromId, toId);
         console.log('Connection created and drawn');

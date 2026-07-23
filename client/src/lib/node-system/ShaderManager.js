@@ -311,6 +311,24 @@ class ShaderManager {
                 }
             }
 
+            // Update shader texture inputs (from connected WebGL shader nodes)
+            if (nodeData.data.shaderTexInputs && nodeData.data.shaderTexInputs.length > 0) {
+                for (const input of nodeData.data.shaderTexInputs) {
+                    const sourceNode = document.getElementById(input.fromNodeId);
+                    if (sourceNode) {
+                        const sourceCanvas = sourceNode.querySelector('canvas');
+                        if (sourceCanvas && sourceCanvas.width > 0 && sourceCanvas.height > 0) {
+                            gl.activeTexture(gl.TEXTURE0 + input.textureUnit);
+                            gl.bindTexture(gl.TEXTURE_2D, input.texture);
+                            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sourceCanvas);
+                            if (input.uniformLocation !== null && input.uniformLocation !== undefined) {
+                                gl.uniform1i(input.uniformLocation, input.textureUnit);
+                            }
+                        }
+                    }
+                }
+            }
+
             // Draw to framebuffer
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
@@ -516,6 +534,17 @@ class ShaderManager {
             gl.useProgram(newProgram);
             gl.uniform1i(hdmiLocation, 3);
             nodeData.data.hdmiLocation = hdmiLocation;
+        }
+        
+        // Refresh shader texture input uniform locations
+        if (nodeData.data.shaderTexInputs && nodeData.data.shaderTexInputs.length > 0) {
+            gl.useProgram(newProgram);
+            for (const input of nodeData.data.shaderTexInputs) {
+                input.uniformLocation = gl.getUniformLocation(newProgram, input.uniformName);
+                if (input.uniformLocation !== null) {
+                    gl.uniform1i(input.uniformLocation, input.textureUnit);
+                }
+            }
         }
         
         nodeData.code = code;
@@ -743,6 +772,70 @@ class ShaderManager {
             // Texture updates are now handled in the main WebGL render loop
 
             console.log('HDMI setup complete');
+        } else if (fromNodeData.type === 'webgl' && toNodeData.type === 'webgl') {
+            const gl = toNodeData.data.gl;
+            if (!gl) {
+                console.error('No WebGL context on target node');
+                return;
+            }
+
+            // Initialize shader texture inputs array if not present
+            if (!toNodeData.data.shaderTexInputs) {
+                toNodeData.data.shaderTexInputs = [];
+            }
+
+            // Determine the texture index for this connection
+            const texIndex = toNodeData.data.shaderTexInputs.length;
+            // Use texture units starting at 4 (0=prevFrame, 2=webcam, 3=hdmi)
+            const textureUnit = 4 + texIndex;
+            const uniformName = `u_tex${texIndex}`;
+
+            // Create texture for the source shader's output
+            const texture = gl.createTexture();
+            gl.activeTexture(gl.TEXTURE0 + textureUnit);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            // Initialize with a 1x1 transparent pixel
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+
+            // Store the connection info
+            toNodeData.data.shaderTexInputs.push({
+                fromNodeId: fromNode.id,
+                texture,
+                textureUnit,
+                uniformName
+            });
+
+            // Inject the uniform declaration into the target shader code
+            let shaderCode = toNodeData.code;
+            if (!shaderCode.includes(`uniform sampler2D ${uniformName};`)) {
+                const uniformIndex = shaderCode.lastIndexOf('uniform');
+                const insertPosition = uniformIndex !== -1 ?
+                    shaderCode.indexOf(';', uniformIndex) + 1 :
+                    shaderCode.indexOf('void main()');
+
+                const texUniform = `\nuniform sampler2D ${uniformName};\n` +
+                    `//vec4 c${texIndex} = texture2D(${uniformName}, gl_FragCoord.xy / u_resolution);`;
+                shaderCode = shaderCode.slice(0, insertPosition) +
+                    texUniform +
+                    shaderCode.slice(insertPosition);
+            }
+
+            await this.updateShader(toNode.id, shaderCode);
+
+            // Set the uniform location on the new program
+            const program = toNodeData.data.program;
+            gl.useProgram(program);
+            const uniformLocation = gl.getUniformLocation(program, uniformName);
+            gl.uniform1i(uniformLocation, textureUnit);
+
+            // Store the uniform location for the render loop
+            const input = toNodeData.data.shaderTexInputs[texIndex];
+            input.uniformLocation = uniformLocation;
+
+            console.log(`Shader-to-shader connection set up: ${fromNode.id} → ${toNode.id} as ${uniformName} (unit ${textureUnit})`);
         }
     }
 
